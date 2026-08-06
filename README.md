@@ -9,9 +9,13 @@ Saturday 8 August 2026 · Waimanga Room, Wellington City Council
 
 > How might communities provide WCC with timely, structured information about local conditions, impacts and needs — before and during an emergency — and see that their information has been received?
 
-The current flow is inconsistent and largely one-way: WCC sends information out, while reports from communities arrive through several unrelated channels and may not reach the people who can use them. A prototype could let residents, community groups or Community Emergency Hubs report an issue with location, time, issue type, description and an image — and see receipt acknowledged.
+The current flow is inconsistent and largely one-way. WCC sends information out, while reports from communities arrive through several unrelated channels and may not reach the people who can use them.
+
+A prototype could allow residents, community groups or Community Emergency Hubs to report an issue using a simple form or message. Reports could include location, time, issue type, description and an image. WCC could group similar reports, acknowledge receipt and show whether an issue is being checked or acted on.
 
 **Desired outcome:** WCC gains better local awareness, while communities have a clearer and more dependable route into Council.
+
+*The common theme is improving the flow and use of information between communities and Council before and during an event.*
 
 ---
 
