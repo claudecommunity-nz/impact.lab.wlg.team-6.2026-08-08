@@ -111,3 +111,12 @@ live" is the whole win; skip ETA.
   signal's `id` back to hand to the reporter as their reference code. If it
   returns nothing, the id has to come from somewhere else (e.g. the caller
   generates its own UUID up front and includes it in the published fields).
+- Does WCC's call centre already offload after-hours/weekend load to
+  another provider — e.g. Palmerston North City Council's shared
+  after-hours hub (a real, documented service used by ~27–28 NZ councils,
+  confirmed for Christchurch City Council, unconfirmed for WCC), or
+  Greater Wellington Regional Council? This changes who the report-status
+  loop actually relieves: if WCC's after-hours calls already go to a
+  subcontracted provider that never sees our signals, the "reduces
+  double-handling" pitch needs to be scoped to WCC's own daytime team, not
+  after-hours coverage generally.
