@@ -58,8 +58,12 @@ is.
 
 **2. Status updates are one-tap, not free text.**
 A fixed, small vocabulary — `received` (fires automatically the instant the
-report lands, no human needed) → `being checked` → `actioned` / `resolved`.
-Each tap publishes a `report-status` signal:
+report lands, no human needed) → `reviewing` → `responding` → `resolved`.
+Deliberately clear of track4's `action`/`verify`/`awareness` + priority 1–5
+vocabulary — same underlying classify-with-Claude trick, different scope
+(this team's own reporters, not a citywide ops ranking), so it gets its own
+words rather than reusing track4's. Each tap publishes a `report-status`
+signal:
 
 ```python
 publish_signal(
@@ -101,3 +105,9 @@ live" is the whole win; skip ETA.
 - Does `raw` support the kind of client-side filtering this design assumes
   (`fetch_signals`/`useSignals` returning full `raw` payloads, not just
   indexed fields)?
+- Does `publish_signal()` return the signal it just created? The cheatsheet
+  only says "→ publishes to Supabase," nothing about a return value —
+  `submit_report()` in `report_status_loader.py` assumes it gets the new
+  signal's `id` back to hand to the reporter as their reference code. If it
+  returns nothing, the id has to come from somewhere else (e.g. the caller
+  generates its own UUID up front and includes it in the published fields).
