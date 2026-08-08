@@ -1,0 +1,224 @@
+"""Demo content for the message board.
+
+⚠ EVERY MESSAGE IN THIS FILE IS INVENTED.
+
+The agencies are real — WCC Emergency Management, WREMO, Wellington Water,
+FENZ, Police, Greater Wellington, Wellington Free Ambulance, Red Cross — so
+that a WCC judge sees their own operating picture rather than a set of made-up
+placeholders. None of these bodies wrote any of this, none of it reflects a
+real incident, and the interface says so on every agency channel.
+
+If this ever moves beyond a prototype, this file goes and the agency channels
+stay empty until the agencies themselves are in them.
+
+Written around one scenario so the board reads as a single event: heavy rain,
+surface flooding on Hutt Road, a slip in Wadestown, and a power outage in Aro
+Valley — the same incidents as the seeded reports in run.py.
+"""
+
+from __future__ import annotations
+
+# (channel_id, author_name, agency, body, visibility)
+AGENCY_MESSAGES = [
+    ("wcc-em", "Duty Controller", "WCC Emergency Management",
+     "Heavy rain warning upgraded to orange for Wellington. Standing up the EOC at reduced staffing from 14:00.", "public"),
+    ("wcc-em", "Duty Controller", "WCC Emergency Management",
+     "Three community reports of surface flooding on Hutt Road in the last twenty minutes. Grouped as one incident, contractor tasked.", "public"),
+    ("wcc-em", "Ops Officer", "WCC Emergency Management",
+     "Wadestown slip is footpath-only at this stage. Road remains open. Reassess after the next band of rain.", "public"),
+    ("wcc-em", "Ops Officer", "WCC Emergency Management",
+     "Holding off on a public evacuation message. Nothing in the reports supports it yet and we don't want to move people unnecessarily.", "officials"),
+
+    ("wremo", "Regional Duty", "WREMO",
+     "Aro Valley hub has self-activated on the power outage. Two volunteers on site, they have the sat phone.", "public"),
+    ("wremo", "Regional Duty", "WREMO",
+     "Reminder to all: hub coordinators are reporting through the community channel, not by ringing the call centre. Please pick reports up from there.", "public"),
+    ("wremo", "Regional Duty", "WREMO",
+     "Island Bay request for assistance with a mobility-impaired resident has been passed to Free Ambulance.", "public"),
+
+    ("wellington-water", "Network Control", "Wellington Water",
+     "Stormwater network at capacity through Ngauranga. Overland flow paths behaving as modelled so far.", "public"),
+    ("wellington-water", "Network Control", "Wellington Water",
+     "Crew dispatched to the Hutt Road culvert. ETA 25 minutes, traffic management required.", "public"),
+    ("wellington-water", "Network Control", "Wellington Water",
+     "No wastewater overflows reported at this stage. Monitoring the Aro catchment.", "public"),
+
+    ("fenz", "Comms", "Fire and Emergency NZ",
+     "Two appliances committed to pumping out at Ngauranga. No persons reported.", "public"),
+    ("fenz", "Comms", "Fire and Emergency NZ",
+     "If the Wadestown slip moves onto the carriageway we will need a road closure — flagging early so it isn't a surprise.", "public"),
+
+    ("nz-police", "District Comms", "NZ Police",
+     "Units aware of the Hutt Road lane closure. Assisting with traffic management on request.", "public"),
+    ("nz-police", "District Comms", "NZ Police",
+     "No reports of looting or public order issues. Routine patrols continuing.", "public"),
+
+    ("gwrc", "Flood Protection", "Greater Wellington",
+     "Hutt River at Taita Gorge rising but well inside banks. Telemetry updating every 15 minutes.", "public"),
+    ("gwrc", "Flood Protection", "Greater Wellington",
+     "Metlink advising delays on the Johnsonville line. No suspensions.", "public"),
+
+    ("wfa", "Comms Desk", "Wellington Free Ambulance",
+     "Received the Island Bay welfare request. Crew assigned, non-urgent.", "public"),
+
+    ("red-cross", "Welfare Lead", "NZ Red Cross",
+     "Two welfare volunteers available if a hub needs relief overnight. Contact through WREMO.", "public"),
+]
+
+# (channel_id, author_name, role, body, visibility)
+PUBLIC_MESSAGES = [
+    ("wellington", "Wellington City Council", "official",
+     "Rain is expected to continue until about 8pm. If you see surface flooding, report it here rather than ringing — it reaches the duty officer faster and you'll get an update back.", "public"),
+    ("wellington", "Mere", "resident",
+     "Is the Ngauranga onramp still passable? Heading north in about an hour.", "public"),
+    ("wellington", "Wellington City Council", "official",
+     "Southbound lane at Ngauranga is closed, northbound is open with surface water. Take it slowly.", "public"),
+    ("wellington", "Tama", "resident",
+     "Reminder the Aro Valley hub is open if anyone in that block needs somewhere warm while the power's out.", "public"),
+
+    ("ngauranga", "Priya", "resident",
+     "Water's over the kerb outside the container yard now. Was ankle deep twenty minutes ago.", "public"),
+    ("ngauranga", "Dave", "resident",
+     "Two cars stopped in the flooded bit. Occupants are out and fine, they're waiting on the verge.", "public"),
+    ("ngauranga", "Wellington City Council", "official",
+     "Thanks both — contractor is en route, about 25 minutes. Please don't drive into it.", "public"),
+    ("ngauranga", "Priya", "resident",
+     "Contractor's arrived and they've got cones out across the southbound lane now. Traffic is moving again on the other side.", "public"),
+    ("wellington", "Priya", "resident",
+     "For anyone heading through Ngauranga: southbound is coned off but northbound is fine, just slow. The crew were quick.", "public"),
+
+    ("wadestown", "Ang", "resident",
+     "Slip across the footpath near the shops, people are walking on the road to get past. Kids on the school route in the morning is my worry.", "public"),
+    ("wadestown", "Wellington City Council", "official",
+     "Logged and being checked. If it moves onto the road we'll close it — keep an eye out here.", "public"),
+
+    ("aro-valley", "Aro Valley Community Hub", "hub",
+     "Hub is open. Kettle's on, we've got power via the generator and room for about forty.", "public"),
+    ("aro-valley", "Sam", "resident",
+     "Whole block's been dark since about twenty past. Anyone know an ETA?", "public"),
+    ("aro-valley", "Aro Valley Community Hub", "hub",
+     "No ETA from the lines company yet. We'll post here the moment we hear.", "public"),
+
+    ("island-bay", "Community Group", "resident",
+     "There's an older gentleman on our street whose ground floor is taking water and he can't manage the step. We've reported it.", "officials"),
+    ("island-bay", "Wellington City Council", "official",
+     "Received and passed to Free Ambulance for a welfare check. Thank you for flagging it.", "public"),
+
+    ("newtown", "Jo", "resident",
+     "Large branch down across Adelaide Road, blocking both lanes.", "public"),
+    ("newtown", "Anon", "resident",
+     "the council never does anything about this street its a disgrace and the mayor should resign", "public"),
+]
+
+BANNER = {
+    "level": "warning",
+    "text": ("Orange heavy rain warning in force until 8pm. Surface flooding on "
+             "Hutt Road at Ngauranga — southbound lane closed. In an emergency call 111."),
+}
+
+# The Newtown message above is seeded, then flagged, so the demo can show what
+# moderation looks like: it leaves the public feed, a visible marker stays, and
+# the flag itself is a signal in the log. Nothing disappears without trace.
+FLAG_LAST_NEWTOWN_REASON = "Off-topic for an emergency board — moved out of the public feed, not deleted."
+
+
+# --- live map: what WCC has published, and what people are asking for ------
+# All invented, same scenario as everything else.
+
+# (title, detail, state, place, lat, lng, severity)
+PUBLISHED_ISSUES = [
+    ("Hutt Road southbound lane closed at Ngauranga",
+     "Surface flooding. Contractor on site with traffic management. Northbound is open but slow.",
+     "active", "Ngauranga", -41.2432, 174.8100, "severe"),
+    ("Wadestown Road footpath blocked by a slip",
+     "Footpath only at this stage; the road remains open. Being reassessed after the next band of rain.",
+     "monitoring", "Wadestown", -41.2660, 174.7710, "moderate"),
+    ("Aro Valley power outage",
+     "Lines company advises a fault affecting about 400 properties. The community hub is open with a generator.",
+     "active", "Aro Valley", -41.2950, 174.7690, "moderate"),
+]
+
+# (need, detail, urgency, place, lat, lng, people, visibility, author)
+HELP_REQUESTS = [
+    ("evacuation",
+     "Ground floor flat is taking water. My father uses a walker and can't manage the front step. "
+     "Back gate is the easier way in.",
+     "now", "Island Bay", -41.3110, 174.7810, 2, "officials", "Community Group"),
+    ("welfare",
+     "Elderly neighbour two doors down hasn't answered since the power went out. She usually has her light on.",
+     "today", "Aro Valley", -41.2948, 174.7695, 1, "public", "Tama"),
+    ("water",
+     "No water at our place since about 3pm. Two small kids. Happy to walk somewhere if there's a tap.",
+     "today", "Karori", -41.2857, 174.7370, 4, "public", "Sam"),
+    ("access",
+     "Tree across the driveway, can't get the car out. Not urgent but we're due at an appointment tomorrow.",
+     "soon", "Newtown", -41.3050, 174.7780, 2, "public", "Jo"),
+]
+
+# (target index into HELP_REQUESTS, likelihood, timeframe, note)
+RESPONSES = [
+    (0, "confirmed", "within-hour", "Free Ambulance crew assigned, coming via the back gate as advised."),
+    (2, "likely", "today", "Water tanker heading to the Karori hub. We'll post the location here once it's set up."),
+    (3, "unlikely", "no-eta", "Contractors are committed to road closures tonight. If it's safe to leave the car, "
+                              "we'd suggest that — we'll get to this once the weather eases."),
+]
+
+
+# --- news: periodic agency updates ----------------------------------------
+# (agency, category, title, body, area, link)
+NEWS = [
+    ("wcc-em", "evacuation",
+     "No evacuation is in place for Wellington",
+     "We are aware of rumours about an evacuation of low-lying suburbs. There is no "
+     "evacuation notice in force. If that changes you will hear it here, on the radio, "
+     "and through an emergency mobile alert. Do not act on second-hand information.",
+     "Citywide", None),
+    ("wellington-water", "water",
+     "Boil water notice for part of Tawa",
+     "A pressure loss on the Tawa network means water may not be safe to drink between "
+     "Main Road and the stream. Boil for one minute before drinking, or use bottled. "
+     "We will confirm here when it is lifted.",
+     "Tawa", None),
+    ("wcc-em", "welfare",
+     "Aro Valley and Karori hubs are open",
+     "Both have power, heating and hot drinks. Aro Valley is running on a generator. "
+     "Room for about forty at each. Bring medication and warm clothing if you can.",
+     "Aro Valley, Karori", None),
+    ("metlink", "road",
+     "Johnsonville line delays, buses replacing trains after 6pm",
+     "Surface flooding near the track. Replacement buses from 6pm, expect 20 to 30 "
+     "minutes added to journeys.",
+     "Northern suburbs", None),
+    ("wellington-electricity", "power",
+     "Aro Valley outage — about 400 properties",
+     "Crews are on site. Current estimate for restoration is 9pm and we will update "
+     "here if that changes.",
+     "Aro Valley", None),
+    ("health-nz", "health",
+     "Stay out of floodwater",
+     "Floodwater in Wellington regularly carries wastewater. Do not let children play "
+     "in it, keep cuts covered, and wash thoroughly afterwards. Seek advice if you "
+     "develop diarrhoea or a fever in the next few days.",
+     "Citywide", None),
+    ("wcc-em", "service",
+     "Rubbish and recycling collections suspended tomorrow",
+     "Crews are redirected to the response. Leave bins in until collections resume — "
+     "we will post the catch-up schedule here.",
+     "Citywide", None),
+    ("gwrc", "weather",
+     "Orange heavy rain warning extended to 10pm",
+     "MetService has extended the warning by two hours. Another 30 to 50mm expected. "
+     "River levels at Taita Gorge are rising but remain well inside banks.",
+     "Wellington region", None),
+    ("wcc-em", "recovery",
+     "If your property is damaged, photograph it before you clean up",
+     "Take photos before moving anything — insurers will ask. Keep receipts for "
+     "emergency repairs. We will publish the assistance process here once the "
+     "weather eases.",
+     "Citywide", None),
+    ("nz-police", "general",
+     "Roads are quiet — please keep them that way",
+     "Only travel if you need to. Every car that gets stuck in floodwater ties up a "
+     "crew that is needed somewhere else.",
+     "Citywide", None),
+]

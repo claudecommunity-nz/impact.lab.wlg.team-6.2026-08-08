@@ -1,2 +1,8 @@
 __pycache__/
 *.pyc
+
+# Runtime signal log written by run.py — local data, never committed.
+# Leading slash matters: an unanchored `data/` would also match web/data/,
+# which holds the baked basemap the offline demo depends on.
+/data/
+*.jsonl

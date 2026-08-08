@@ -1,0 +1,1100 @@
+/* Two-way channel — Impact Lab Wellington, Team 6.
+   No framework, no CDN, no build step. One file. */
+
+:root {
+  --ink:        #101822;
+  --ink-2:      #40506a;
+  --ink-3:      #7285a0;
+  --paper:      #f4f6f9;
+  --card:       #ffffff;
+  --line:       #dde3ec;
+  --accent:     #0b5cd5;
+  --accent-ink: #ffffff;
+
+  --received:   #5b7089;
+  --reviewing:  #b26a00;
+  --responding: #0b5cd5;
+  --resolved:   #17794a;
+
+  --sea:        #e4ecf6;
+  --land:       #eef1f5;
+
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16,24,34,.06), 0 8px 24px rgba(16,24,34,.05);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink:    #e7edf5;
+    --ink-2:  #a9b8cc;
+    --ink-3:  #7387a1;
+    --paper:  #0c1119;
+    --card:   #141b26;
+    --line:   #253044;
+    --accent: #5b9bff;
+    --accent-ink: #0a1220;
+
+    --received:   #8ba0ba;
+    --reviewing:  #e0a13c;
+    --responding: #5b9bff;
+    --resolved:   #4cc38a;
+
+    --sea:  #101927;
+    --land: #18212f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+h1 { font-size: 1.35rem; margin: 0 0 .2em; letter-spacing: -.01em; }
+h2 { font-size: 1rem; margin: 0; letter-spacing: -.005em; }
+
+/* ── chrome ─────────────────────────────────────────────── */
+
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; flex-wrap: wrap; gap: 12px;
+  align-items: center; justify-content: space-between;
+  padding: 10px 16px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand strong { display: block; font-size: .95rem; letter-spacing: -.01em; }
+.brand .sub { display: block; font-size: .75rem; color: var(--ink-3); }
+.mark {
+  width: 26px; height: 26px; border-radius: 7px; flex: none;
+  background:
+    radial-gradient(circle at 50% 50%, var(--accent) 0 28%, transparent 29%),
+    conic-gradient(from 210deg, var(--accent) 0 25%, transparent 0 100%);
+  border: 1px solid var(--line);
+}
+
+.tabs { display: flex; gap: 4px; }
+.tab {
+  border: 1px solid transparent; background: none; cursor: pointer;
+  color: var(--ink-2); font: inherit; font-size: .85rem;
+  padding: 7px 12px; border-radius: 999px;
+}
+.tab:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tab.is-active {
+  background: var(--accent); color: var(--accent-ink); font-weight: 600;
+}
+.pill {
+  display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px;
+  border-radius: 999px; background: color-mix(in srgb, currentColor 20%, transparent);
+  font-size: .72rem; font-variant-numeric: tabular-nums;
+}
+
+.disclaimer {
+  margin: 0; padding: 9px 16px;
+  background: color-mix(in srgb, var(--reviewing) 12%, var(--paper));
+  border-bottom: 1px solid var(--line);
+  font-size: .8rem; color: var(--ink-2);
+}
+.disclaimer strong { color: var(--ink); }
+
+main { padding: 16px; max-width: 1400px; margin: 0 auto; }
+
+footer {
+  display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+  padding: 18px 16px 34px; border-top: 1px solid var(--line);
+  color: var(--ink-3); font-size: .78rem;
+}
+footer a { color: var(--ink-3); font-family: var(--mono); }
+
+/* ── layout ─────────────────────────────────────────────── */
+
+.view { display: none; }
+.view.is-active { display: block; animation: rise .2s ease both; }
+@keyframes rise { from { opacity: 0; transform: translateY(4px); } }
+
+.split { display: grid; gap: 16px; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); align-items: start; }
+.split.wide { grid-template-columns: minmax(0, 1fr) minmax(0, 460px); }
+@media (max-width: 900px) { .split, .split.wide { grid-template-columns: 1fr; } }
+
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow);
+}
+.stack { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.scroller { max-height: 74vh; overflow-y: auto; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1 1 180px; }
+.hint { color: var(--ink-3); font-size: .82rem; margin: .2em 0 .8em; }
+
+/* ── form ───────────────────────────────────────────────── */
+
+form label { display: block; margin: 0 0 12px; }
+form label > span {
+  display: block; font-size: .8rem; font-weight: 600;
+  color: var(--ink-2); margin-bottom: 5px;
+}
+form label > span em { font-weight: 400; font-style: normal; color: var(--ink-3); }
+
+input, textarea, select {
+  width: 100%; padding: 10px 12px; font: inherit; font-size: .92rem;
+  color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line); border-radius: 9px;
+}
+input:focus, textarea:focus {
+  outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent;
+}
+textarea { resize: vertical; }
+
+fieldset { border: 0; padding: 0; margin: 0 0 14px; }
+legend {
+  font-size: .8rem; font-weight: 600; color: var(--ink-2); padding: 0; margin-bottom: 6px;
+}
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  border: 1px solid var(--line); background: var(--paper); color: var(--ink-2);
+  font: inherit; font-size: .82rem; padding: 6px 11px;
+  border-radius: 999px; cursor: pointer;
+}
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent);
+  color: var(--accent-ink); font-weight: 600;
+}
+
+.btn {
+  font: inherit; font-size: .88rem; font-weight: 600; cursor: pointer;
+  padding: 10px 16px; border-radius: 9px; border: 1px solid var(--line);
+  background: var(--paper); color: var(--ink);
+}
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); width: 100%; }
+.btn.ghost { background: transparent; }
+.btn:disabled { opacity: .55; cursor: progress; }
+.btn.tiny { padding: 5px 9px; font-size: .76rem; font-weight: 500; }
+
+.readout {
+  font-family: var(--mono); font-size: .78rem; color: var(--ink-3);
+  padding: 6px 0;
+}
+.readout.set { color: var(--resolved); }
+.formnote { font-size: .78rem; color: var(--ink-3); margin: 10px 0 0; }
+.error {
+  margin: 10px 0 0; padding: 9px 11px; border-radius: 8px; font-size: .84rem;
+  background: color-mix(in srgb, #d93636 14%, transparent);
+  border: 1px solid color-mix(in srgb, #d93636 40%, transparent);
+}
+
+/* ── receipt ────────────────────────────────────────────── */
+
+.receipt { margin-top: 16px; text-align: center; }
+.receipt .tick {
+  width: 46px; height: 46px; margin: 0 auto 8px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 1.4rem; font-weight: 700;
+  background: color-mix(in srgb, var(--resolved) 16%, transparent); color: var(--resolved);
+}
+.receipt .lede { color: var(--ink-3); font-size: .82rem; margin: .4em 0; }
+.ref {
+  font-family: var(--mono); font-size: clamp(1.8rem, 7vw, 2.6rem);
+  font-weight: 700; letter-spacing: .06em; margin: .1em 0; color: var(--accent);
+}
+.receipt .row { justify-content: center; margin-top: 14px; }
+.context {
+  font-size: .8rem; color: var(--ink-2); margin: 10px auto 0; max-width: 44ch;
+  padding: 9px 11px; border-radius: 8px; background: var(--paper);
+  border: 1px dashed var(--line);
+}
+
+/* ── report cards + timeline ────────────────────────────── */
+
+.report {
+  background: var(--card); border: 1px solid var(--line);
+  border-left: 3px solid var(--received);
+  border-radius: var(--radius); padding: 13px 15px;
+}
+.report.s-received   { border-left-color: var(--received); }
+.report.s-reviewing  { border-left-color: var(--reviewing); }
+.report.s-responding { border-left-color: var(--responding); }
+.report.s-resolved   { border-left-color: var(--resolved); }
+.report.is-flash { animation: flash 1.4s ease; }
+@keyframes flash {
+  0%, 100% { background: var(--card); }
+  25%      { background: color-mix(in srgb, var(--accent) 16%, var(--card)); }
+}
+
+.report h3 { margin: 0 0 3px; font-size: .95rem; letter-spacing: -.005em; }
+.report .meta {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  font-size: .76rem; color: var(--ink-3); margin-bottom: 6px;
+}
+.report .body { font-size: .87rem; color: var(--ink-2); margin: 0 0 8px; }
+.code { font-family: var(--mono); font-size: .76rem; color: var(--ink-3); }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 999px; font-size: .74rem; font-weight: 600;
+}
+.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.b-received   { color: var(--received);   background: color-mix(in srgb, var(--received) 14%, transparent); }
+.b-reviewing  { color: var(--reviewing);  background: color-mix(in srgb, var(--reviewing) 16%, transparent); }
+.b-responding { color: var(--responding); background: color-mix(in srgb, var(--responding) 14%, transparent); }
+.b-resolved   { color: var(--resolved);   background: color-mix(in srgb, var(--resolved) 16%, transparent); }
+
+.grouptag {
+  font-size: .72rem; padding: 2px 7px; border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent);
+  font-weight: 600;
+}
+
+.timeline { list-style: none; margin: 10px 0 0; padding: 0 0 0 16px; border-left: 2px solid var(--line); }
+.timeline li { position: relative; padding: 0 0 12px 12px; font-size: .84rem; }
+.timeline li::before {
+  content: ""; position: absolute; left: -21px; top: 6px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--card); border: 2px solid var(--ink-3);
+}
+.timeline li.now::before { background: var(--accent); border-color: var(--accent); }
+.timeline .when { display: block; font-size: .74rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.timeline .note { color: var(--ink-2); }
+
+.taps { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; padding-top: 9px; border-top: 1px dashed var(--line); }
+
+/* ── map ────────────────────────────────────────────────── */
+
+.mapwrap { padding: 12px; }
+.maphead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.counter { font-size: .78rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+.map {
+  width: 100%; aspect-ratio: 4 / 3.2; border-radius: 9px; overflow: hidden;
+  background: var(--sea); border: 1px solid var(--line); position: relative;
+  touch-action: manipulation;
+}
+.map svg { display: block; width: 100%; height: 100%; }
+#map-report .map, .map.pickable { cursor: crosshair; }
+
+.zone-red    { fill: #d64545; fill-opacity: .26; stroke: #d64545; stroke-opacity: .5; stroke-width: .6; }
+.zone-orange { fill: #e08a2e; fill-opacity: .22; stroke: #e08a2e; stroke-opacity: .5; stroke-width: .6; }
+.zone-yellow { fill: #e3c342; fill-opacity: .20; stroke: #e3c342; stroke-opacity: .5; stroke-width: .6; }
+.zone-other  { fill: #8899aa; fill-opacity: .14; stroke: #8899aa; stroke-opacity: .4; stroke-width: .6; }
+
+.hub { fill: var(--ink-3); fill-opacity: .55; }
+/* Reports carry a light stroke so they read as foreground against the hub
+   dots, which are a similar size and a similar colour to a "received" pin. */
+.pin {
+  cursor: pointer; transition: transform .12s ease;
+  transform-origin: center; transform-box: fill-box;
+  stroke: var(--card); stroke-width: 1.6;
+}
+.pin:hover { transform: scale(1.35); }
+.pin.p-received   { fill: var(--received); }
+.pin.p-reviewing  { fill: var(--reviewing); }
+.pin.p-responding { fill: var(--responding); }
+.pin.p-resolved   { fill: var(--resolved); }
+.pin-halo { fill: none; stroke: var(--accent); stroke-width: 1.5; opacity: .9; }
+.drop { fill: var(--accent); stroke: var(--card); stroke-width: 1.2; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 9px; font-size: .72rem; color: var(--ink-3); }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+.attrib { font-size: .7rem; color: var(--ink-3); margin: 7px 0 0; line-height: 1.4; }
+
+.empty { color: var(--ink-3); font-size: .86rem; text-align: center; padding: 26px 10px; }
+
+/* ── message board, agency wall, comms banner ───────────── */
+
+.commsbanner {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline;
+  padding: 10px 16px; font-size: .86rem;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--reviewing) 18%, var(--paper));
+  color: var(--ink);
+}
+.commsbanner.l-info     { background: color-mix(in srgb, var(--responding) 14%, var(--paper)); }
+.commsbanner.l-advisory { background: color-mix(in srgb, var(--reviewing) 14%, var(--paper)); }
+.commsbanner.l-warning  { background: color-mix(in srgb, var(--reviewing) 22%, var(--paper)); }
+.commsbanner.l-critical {
+  background: color-mix(in srgb, #d64545 22%, var(--paper));
+  border-bottom-color: #d64545;
+}
+.cb-tag {
+  font-size: .68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 999px; flex: none;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+.cb-text { font-weight: 600; flex: 1 1 320px; }
+.cb-meta { font-size: .72rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+.split.boards { grid-template-columns: minmax(0, 300px) minmax(0, 1fr); }
+@media (max-width: 900px) { .split.boards { grid-template-columns: 1fr; } }
+
+.channels { display: flex; flex-direction: column; gap: 3px; margin: 10px 0 16px; }
+.chan {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  border: 1px solid transparent; background: none; cursor: pointer;
+  font: inherit; font-size: .87rem; color: var(--ink-2);
+  padding: 8px 10px; border-radius: 8px; text-align: left;
+}
+.chan:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.chan.is-active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--ink); font-weight: 600; }
+.chan .n { flex: 1; }
+.chan .c { font-size: .72rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+.whoami { border-top: 1px dashed var(--line); padding-top: 12px; }
+
+.chatpane { display: flex; flex-direction: column; min-height: 0; }
+.chathead {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line);
+}
+.messages {
+  flex: 1; overflow-y: auto; max-height: 56vh;
+  display: flex; flex-direction: column; gap: 10px; padding: 12px 2px;
+}
+
+.msg { display: flex; flex-direction: column; gap: 3px; }
+.msg .who { display: flex; flex-wrap: wrap; gap: 7px; align-items: baseline; font-size: .78rem; }
+.msg .name { font-weight: 600; color: var(--ink); }
+.msg .at { color: var(--ink-3); font-size: .72rem; font-variant-numeric: tabular-nums; }
+.msg .bubble {
+  background: var(--paper); border: 1px solid var(--line);
+  border-radius: 4px 12px 12px 12px; padding: 9px 12px;
+  font-size: .89rem; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.msg.is-mine .bubble {
+  background: color-mix(in srgb, var(--accent) 10%, var(--card));
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.msg.is-official .bubble {
+  background: color-mix(in srgb, var(--responding) 9%, var(--card));
+  border-color: color-mix(in srgb, var(--responding) 30%, transparent);
+}
+.msg.is-withheld .bubble {
+  background: transparent; border-style: dashed; color: var(--ink-3);
+  font-style: italic; font-size: .82rem;
+}
+
+.tag {
+  font-size: .66rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 5px;
+}
+.t-official { background: color-mix(in srgb, var(--responding) 18%, transparent); color: var(--responding); }
+.t-hub      { background: color-mix(in srgb, var(--resolved) 18%, transparent); color: var(--resolved); }
+.t-private  { background: color-mix(in srgb, var(--ink-3) 22%, transparent); color: var(--ink-2); }
+.t-flagged  { background: color-mix(in srgb, #d64545 18%, transparent); color: #d64545; }
+
+.composer { border-top: 1px solid var(--line); padding-top: 10px; }
+.composer textarea { font-size: .89rem; }
+.composer-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 7px; }
+.btn.compact { width: auto; padding: 8px 14px; }
+
+.demowarn {
+  margin: 14px 0; padding: 10px 13px; border-radius: 9px; font-size: .82rem;
+  background: color-mix(in srgb, var(--reviewing) 13%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--reviewing) 34%, transparent);
+  color: var(--ink-2);
+}
+.bannerctl .row { margin-top: 10px; }
+
+/* the wall: lots of chat screens on one page */
+.wall {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+}
+.wallpane {
+  background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--ink-3);
+  border-radius: var(--radius); padding: 11px 13px; display: flex; flex-direction: column;
+  box-shadow: var(--shadow); min-height: 250px;
+}
+.wallpane h3 { margin: 0; font-size: .85rem; letter-spacing: -.005em; }
+.wallpane .sub { font-size: .7rem; color: var(--ink-3); margin-bottom: 8px; }
+.wallpane .messages { max-height: 210px; padding: 0; gap: 8px; }
+.wallpane .msg .bubble { font-size: .8rem; padding: 7px 10px; }
+.wallpane .composer { padding-top: 8px; margin-top: 8px; }
+.wallpane .composer textarea { font-size: .8rem; }
+
+/* ── auth cards, roles, trust ────────────────────────────── */
+
+.whoarea { display: flex; align-items: center; gap: 8px; }
+.rolebadge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .76rem; font-weight: 700; padding: 5px 11px; border-radius: 999px;
+  background: color-mix(in srgb, var(--resolved) 16%, transparent); color: var(--resolved);
+}
+.rolebadge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+dialog {
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 20px;
+  background: var(--card); color: var(--ink); max-width: 420px; width: calc(100% - 32px);
+  box-shadow: 0 20px 60px rgba(0,0,0,.28);
+}
+dialog::backdrop { background: rgba(10,16,26,.55); backdrop-filter: blur(2px); }
+dialog h2 { margin-bottom: .4em; }
+#card-code {
+  font-family: var(--mono); font-size: 1.05rem; letter-spacing: .08em; text-transform: uppercase;
+}
+
+/* the printed card, on screen and on paper */
+.printcard {
+  border: 2px solid var(--ink); border-radius: 10px; padding: 14px 16px;
+  background: var(--card); margin: 12px 0;
+  display: grid; gap: 6px; max-width: 420px;
+}
+.printcard .pc-head {
+  font-size: .66rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-2);
+}
+.printcard .pc-code {
+  font-family: var(--mono); font-size: clamp(1.05rem, 4.2vw, 1.5rem); font-weight: 700;
+  letter-spacing: .1em; word-break: break-all;
+}
+.printcard .pc-meta { font-size: .78rem; color: var(--ink-2); }
+.printcard .pc-warn { font-size: .7rem; color: var(--ink-3); }
+
+.cardrow {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px;
+  font-size: .84rem; background: var(--paper);
+}
+.cardrow.is-revoked { opacity: .5; text-decoration-color: var(--ink-3); }
+.cardrow .who { font-weight: 600; flex: 1 1 140px; }
+
+.trustrow {
+  border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px;
+  background: var(--paper);
+}
+.trustrow.is-eligible { border-color: var(--resolved); background: color-mix(in srgb, var(--resolved) 8%, var(--paper)); }
+.trustrow.is-blocked { border-style: dashed; opacity: .75; }
+.trustrow .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.trustrow .score { font-family: var(--mono); font-weight: 700; font-size: .95rem; }
+.trustrow ul { margin: 6px 0 0; padding-left: 18px; font-size: .78rem; color: var(--ink-2); }
+
+.meter { height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 7px; }
+.meter i { display: block; height: 100%; background: var(--accent); }
+.trustrow.is-eligible .meter i { background: var(--resolved); }
+
+@media print {
+  body > *:not(.printarea) { display: none !important; }
+  .printcard { border-color: #000; box-shadow: none; page-break-inside: avoid; }
+}
+
+
+/* ── near-me filter ──────────────────────────────────────── */
+
+.nearbar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 9px 16px; border-bottom: 1px solid var(--line);
+  background: var(--card); font-size: .82rem;
+}
+.nb-label { font-weight: 600; color: var(--ink-2); }
+.nb-form { display: contents; }
+.nearbar input { width: auto; flex: 1 1 190px; max-width: 260px; padding: 7px 10px; font-size: .84rem; }
+.nearbar .chip { padding: 5px 10px; font-size: .78rem; }
+.nb-state { color: var(--ink-3); font-size: .78rem; }
+.nb-state.is-set { color: var(--resolved); font-weight: 600; }
+
+.pin.is-far { opacity: .18; }
+.hub.is-far { opacity: .12; }
+.near-ring { fill: color-mix(in srgb, var(--accent) 7%, transparent); stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 6 4; }
+.near-dot { fill: var(--accent); stroke: var(--card); stroke-width: 2; }
+
+
+/* ── community map ───────────────────────────────────────── */
+
+.community-form { border-top: 1px dashed var(--line); padding-top: 12px; margin-top: 12px; }
+.community-form h3 { margin: 0 0 6px; font-size: .9rem; }
+.community-form input { margin-bottom: 7px; }
+.community-form .chips { margin-bottom: 8px; }
+.exifreadout {
+  font-size: .78rem; padding: 8px 10px; border-radius: 8px; margin: 0 0 8px;
+  background: color-mix(in srgb, var(--resolved) 10%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--resolved) 30%, transparent);
+  color: var(--ink-2);
+}
+.exifreadout.none {
+  background: var(--paper); border-color: var(--line); color: var(--ink-3);
+}
+
+.stackcard {
+  border: 1px solid var(--line); border-radius: 9px; padding: 11px 13px;
+  background: var(--paper);
+}
+.stackcard.is-strong { border-color: var(--accent); border-left-width: 3px; }
+.stackcard .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.stackcard .strength {
+  font-weight: 700; font-size: .82rem; color: var(--accent);
+}
+.thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.thumbs img {
+  width: 84px; height: 62px; object-fit: cover; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--paper);
+  /* A photo that fails to decode should look like an empty tile, not like
+     broken alt text spilling out of the card. */
+  overflow: hidden; font-size: .6rem; color: var(--ink-3);
+}
+
+.modrow {
+  border: 1px solid var(--reviewing); border-radius: 9px; padding: 10px 12px;
+  background: color-mix(in srgb, var(--reviewing) 8%, var(--card));
+}
+.modrow img { max-width: 100%; border-radius: 6px; margin: 6px 0; }
+
+.res { fill: var(--resolved); stroke: var(--card); stroke-width: 1.4; }
+.feedpin { fill: #7a4bd0; stroke: var(--card); stroke-width: 1.4; }
+.stackpin { fill: var(--accent); fill-opacity: .55; stroke: var(--accent); stroke-width: 1.5; }
+
+
+/* ── live map ────────────────────────────────────────────── */
+
+.split.live { grid-template-columns: minmax(0, 1fr) minmax(0, 400px); }
+.split.live-forms { grid-template-columns: 1fr 1fr; margin-top: 16px; }
+@media (max-width: 900px) { .split.live, .split.live-forms { grid-template-columns: 1fr; } }
+.map.tall { aspect-ratio: 4 / 3.4; }
+
+.layers { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.layers .chip { font-size: .74rem; padding: 4px 9px; }
+.layers .chip i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+
+.liverow {
+  border: 1px solid var(--line); border-left: 3px solid var(--ink-3);
+  border-radius: 9px; padding: 10px 12px; background: var(--paper);
+}
+.liverow.k-request { border-left-color: #d64545; }
+.liverow.k-issue   { border-left-color: var(--responding); }
+.liverow.k-report  { border-left-color: var(--reviewing); }
+.liverow.k-photo   { border-left-color: var(--accent); }
+.liverow.k-resource{ border-left-color: var(--resolved); }
+.liverow.k-feed    { border-left-color: #7a4bd0; }
+.liverow .head { display: flex; flex-wrap: wrap; gap: 7px; align-items: baseline; }
+.liverow .kind {
+  font-size: .64rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 5px; background: color-mix(in srgb, currentColor 14%, transparent);
+}
+.liverow h4 { margin: 3px 0; font-size: .9rem; }
+.liverow .body { font-size: .84rem; color: var(--ink-2); margin: 0 0 6px; }
+
+.answer {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  font-size: .8rem; margin-top: 6px; padding: 7px 9px; border-radius: 7px;
+  background: var(--card); border: 1px solid var(--line);
+}
+.answer .lk { font-weight: 700; }
+.answer.a-confirmed .lk { color: var(--resolved); }
+.answer.a-likely .lk    { color: var(--responding); }
+.answer.a-unlikely .lk  { color: var(--reviewing); }
+.answer.a-unable .lk    { color: #d64545; }
+.answer.a-waiting { border-style: dashed; color: var(--ink-3); }
+
+.respond { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.respond select, .respond input {
+  width: auto; flex: 1 1 120px; font-size: .78rem; padding: 6px 8px;
+}
+.ok {
+  margin: 10px 0 0; padding: 9px 11px; border-radius: 8px; font-size: .84rem;
+  background: color-mix(in srgb, var(--resolved) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--resolved) 40%, transparent);
+}
+
+.reqpin { fill: #d64545; stroke: var(--card); stroke-width: 1.5; }
+.issuepin { fill: var(--responding); stroke: var(--card); stroke-width: 1.5; }
+.reqpin.is-urgent { stroke: #d64545; stroke-width: 2.5; }
+
+
+/* ── climate & equity signal ─────────────────────────────── */
+
+.adapt { margin-top: 16px; border-left: 3px solid var(--resolved); }
+.adapt-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; }
+.finding {
+  border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px;
+  background: var(--paper);
+}
+.finding .what { font-weight: 600; font-size: .9rem; }
+.finding .reading { font-size: .82rem; color: var(--ink-2); margin-top: 4px; }
+.finding.f-equity { border-left: 3px solid var(--reviewing); }
+.finding.f-flood  { border-left: 3px solid var(--responding); }
+.finding.f-tsunami{ border-left: 3px solid #d64545; }
+
+/* ── polish pass ─────────────────────────────────────────────
+   Driven by an actual measurement across four viewports, not taste:
+   the tab bar wrapped into 206px of chrome on a phone (a third of the
+   screen before any content), and twelve controls were under the 32px
+   touch-target minimum. */
+
+/* Tabs scroll sideways instead of wrapping. One row, always. */
+.tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  /* Snap so a half-cut tab doesn't sit at the edge looking like a bug. */
+  scroll-snap-type: x proximity;
+  max-width: 100%;
+  padding-bottom: 2px;
+  margin: 0 -4px;
+  padding-inline: 4px;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab { flex: 0 0 auto; scroll-snap-align: start; min-height: 36px; }
+
+@media (max-width: 900px) {
+  .topbar {
+    gap: 8px;
+    padding: 8px 12px;
+    /* brand | who on row one, tabs full-width on row two */
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "brand who" "tabs tabs";
+  }
+  .brand { grid-area: brand; }
+  .whoarea { grid-area: who; }
+  .tabs { grid-area: tabs; }
+  .brand .sub { display: none; }
+  main { padding: 12px; }
+  .nearbar { padding: 8px 12px; }
+  .nearbar .nb-label { flex-basis: 100%; }
+}
+
+/* Touch targets. Anything a finger has to hit gets 36px. */
+.chip, .btn, .chan, input, select, textarea, .tab { min-height: 36px; }
+.chip { display: inline-flex; align-items: center; }
+.btn.tiny { min-height: 32px; }
+.layers .chip { min-height: 32px; }
+
+/* Focus that is visible without being loud, for keyboard users. */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* Motion, kept subtle and switched off for anyone who asked. */
+.card, .chip, .btn, .liverow, .report, .stackcard { transition: border-color .15s ease, background .15s ease, transform .15s ease; }
+.liverow:hover, .stackcard:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.btn:active, .chip:active { transform: translateY(1px); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* The landing map is the hero — give it room and let the page breathe. */
+#view-live h1 { font-size: clamp(1.35rem, 2.6vw, 1.75rem); }
+.maphead { align-items: baseline; }
+.map { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 4%, transparent); }
+.mapwrap { padding: 14px; }
+
+/* Empty states should look deliberate rather than broken. */
+.empty {
+  border: 1px dashed var(--line); border-radius: 9px;
+  background: color-mix(in srgb, var(--ink-3) 4%, transparent);
+}
+
+/* Scrollers get a soft fade so it is obvious there is more below. */
+.scroller { -webkit-overflow-scrolling: touch; }
+
+/* Long place names and URLs must never push a card wider than the screen. */
+.liverow, .stackcard, .report, .cardrow, .modrow { overflow-wrap: anywhere; }
+footer a { display: inline-flex; align-items: center; min-height: 32px; padding: 0 2px; }
+
+@media (max-width: 900px) {
+  /* Half a phone screen was going on chrome before the map appeared. The
+     disclaimer stays — it is a promise, not decoration — but it does not need
+     to be set at body size. */
+  .brand strong { white-space: nowrap; font-size: .88rem; }
+  .mark { width: 22px; height: 22px; }
+  .disclaimer { font-size: .72rem; line-height: 1.4; padding: 7px 12px; }
+  .commsbanner { font-size: .78rem; padding: 8px 12px; gap: 6px; }
+  .cb-text { flex-basis: 100%; }
+  .cb-meta { display: none; }
+  .nearbar { gap: 6px; padding: 7px 12px; }
+  .nearbar .nb-label { font-size: .76rem; margin-bottom: -2px; }
+  .layers { gap: 4px; }
+  .layers .chip { font-size: .7rem; padding: 4px 8px; }
+  #view-live h1 { font-size: 1.2rem; }
+  .maphead { flex-wrap: wrap; gap: 4px; }
+  .map.tall { aspect-ratio: 1 / 1; }
+}
+.locked { border-left: 3px solid var(--reviewing); }
+.locked .btn { margin-top: 8px; }
+
+/* ── news & help ─────────────────────────────────────────── */
+
+.filters { display: flex; flex-direction: column; gap: 7px; margin-top: 10px; }
+.newsitem {
+  border: 1px solid var(--line); border-left: 3px solid var(--ink-3);
+  border-radius: 9px; padding: 12px 14px; background: var(--card);
+}
+.newsitem.is-urgent { border-left-color: #d64545; background: color-mix(in srgb, #d64545 5%, var(--card)); }
+.newsitem .head { display: flex; flex-wrap: wrap; gap: 7px; align-items: baseline; margin-bottom: 4px; }
+.newsitem h3 { margin: 2px 0 5px; font-size: .98rem; letter-spacing: -.005em; }
+.newsitem .body { font-size: .87rem; color: var(--ink-2); margin: 0; white-space: pre-wrap; }
+.newsitem .src {
+  font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 5px;
+  background: color-mix(in srgb, var(--responding) 14%, transparent); color: var(--responding);
+}
+.newsitem .cat {
+  font-size: .68rem; font-weight: 600; padding: 2px 8px; border-radius: 5px;
+  background: color-mix(in srgb, var(--ink-3) 16%, transparent); color: var(--ink-2);
+}
+.newsitem.is-urgent .cat { background: color-mix(in srgb, #d64545 16%, transparent); color: #d64545; }
+.newsitem a { color: var(--accent); font-size: .84rem; }
+
+.split.help { grid-template-columns: minmax(0, 230px) minmax(0, 1fr); }
+@media (max-width: 900px) { .split.help { grid-template-columns: 1fr; } }
+.helpnav { position: sticky; top: 84px; align-self: start; }
+.helpnav a {
+  display: block; padding: 7px 9px; border-radius: 7px; font-size: .84rem;
+  color: var(--ink-2); text-decoration: none;
+}
+.helpnav a:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--ink); }
+@media (max-width: 900px) { .helpnav { position: static; } }
+
+.helpdoc { max-width: 68ch; }
+.helpdoc .lede { font-size: 1rem; color: var(--ink-2); }
+.helpdoc h2 {
+  font-size: 1.05rem; margin: 26px 0 8px; padding-top: 14px;
+  border-top: 1px solid var(--line); scroll-margin-top: 90px;
+}
+.helpdoc h2:first-of-type { border-top: 0; }
+.helpdoc p, .helpdoc li, .helpdoc dd { font-size: .9rem; color: var(--ink-2); }
+.helpdoc li { margin-bottom: 6px; }
+.helpdoc strong { color: var(--ink); }
+.faq dt { font-weight: 600; color: var(--ink); margin-top: 12px; font-size: .9rem; }
+.faq dd { margin: 4px 0 0; padding-left: 12px; border-left: 2px solid var(--line); }
+.links a { font-size: .87rem; }
+
+/* ═══════════════════════════════════════════════════════════
+   DESIGN PASS — "situation board"
+
+   The reference is not a consumer app; it is the wall of an emergency
+   operations centre. Wellington's own emergency vernacular is colour-banded
+   evacuation zones, hazard signage and radio-log discipline, so that is what
+   this borrows: coloured severity rails, monospace eyebrows in the register
+   of a call sign, and a working surface rather than a marketing surface.
+
+   The accent moves off generic tech-blue to a deep HARBOUR TEAL. Wellington
+   is a harbour city, the colour belongs to the subject rather than to
+   software, and it separates cleanly from the red/orange/yellow that
+   evacuation zoning has already spoken for — which mattered, because on this
+   map blue must never read as a hazard grade.
+
+   No web fonts: a CDN font is the same single point of failure as a CDN map,
+   and this has to work on a dead network. So personality comes from
+   treatment — weight contrast, tight display tracking, and wide-tracked
+   monospace eyebrows — not from a typeface nobody can download.
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  --accent:      #0a5f6b;   /* harbour teal */
+  --accent-ink:  #ffffff;
+  --responding:  #0a5f6b;
+  --ink:         #101a21;
+  --paper:       #eef2f4;
+  --line:        #dbe3e6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent:     #4fc3d4;
+    --accent-ink: #05222a;
+    --responding: #4fc3d4;
+    --ink:        #e6eef1;
+    --paper:      #0a1216;
+    --card:       #111d23;
+    --line:       #22343c;
+    --sea:        #0d1a21;
+  }
+}
+
+/* ── type scale ─────────────────────────────────────────────
+   Three registers: display (tight, heavy), body (plain), and a
+   wide-tracked monospace eyebrow that carries the operational voice. */
+
+h1 { letter-spacing: -.022em; font-weight: 700; }
+h2 { letter-spacing: -.014em; font-weight: 650; }
+h3, h4 { letter-spacing: -.008em; }
+
+.kind, .cb-tag, .pc-head, .tabgroup, .src, .tag {
+  font-family: var(--mono);
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+/* Nav: the public journey, then a rule, then operations. Nine flat tabs
+   asked the reader to work out which side of the product they were on. */
+.tabsplit {
+  flex: 0 0 auto; width: 1px; align-self: stretch;
+  background: var(--line); margin: 0 6px;
+}
+.tabgroup {
+  flex: 0 0 auto; align-self: center;
+  font-size: .62rem; color: var(--ink-3); padding-right: 2px;
+}
+@media (max-width: 900px) { .tabgroup { display: none; } }
+
+/* ── the signature: severity spine ──────────────────────────
+   The live feed reads down a single rail, each entry pegged to it by a node
+   coloured for what it is. It is the shape of an operations log, and it makes
+   "what is going on right now" scannable in one vertical movement instead of
+   card by card. */
+
+#live-feed {
+  position: relative;
+  padding-left: 22px;
+  gap: 14px;
+}
+#live-feed::before {
+  content: "";
+  position: absolute; left: 6px; top: 6px; bottom: 6px;
+  width: 2px; border-radius: 2px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ink-3) 34%, transparent),
+    color-mix(in srgb, var(--ink-3) 6%, transparent));
+}
+#live-feed .liverow { position: relative; border-left-width: 1px; }
+#live-feed .liverow::before {
+  content: "";
+  position: absolute; left: -20px; top: 15px;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--card);
+  border: 2.5px solid var(--ink-3);
+}
+#live-feed .k-request::before  { border-color: #c8322c; }
+#live-feed .k-issue::before    { border-color: var(--accent); }
+#live-feed .k-report::before   { border-color: #c07004; }
+#live-feed .k-resource::before { border-color: #127a4b; }
+#live-feed .k-feed::before     { border-color: #7a4bd0; }
+/* A request nobody has answered yet keeps a live ring, so an unanswered ask
+   is visible from across a room rather than needing to be read. */
+#live-feed .liverow:has(.a-waiting)::before {
+  box-shadow: 0 0 0 4px color-mix(in srgb, #c8322c 20%, transparent);
+}
+
+.liverow .kind { font-size: .61rem; }
+.liverow h3 { font-size: .94rem; font-weight: 650; margin: 3px 0; }
+
+/* ── surfaces ───────────────────────────────────────────── */
+
+.card { border-radius: 10px; }
+.map { border-radius: 8px; }
+.commsbanner { border-left: 4px solid var(--reviewing); }
+.commsbanner.l-critical { border-left-color: #c8322c; }
+
+/* Reporter follow-ups read as the other voice in the conversation. */
+.timeline li.from-reporter::before { background: var(--accent); border-color: var(--accent); }
+.timeline li.is-urgent::before { border-color: #c8322c; background: #c8322c; }
+.needs-attention {
+  border-color: #c8322c !important;
+  background: color-mix(in srgb, #c8322c 6%, var(--card));
+}
+
+
+/* ── real data ───────────────────────────────────────────── */
+
+.realnote {
+  margin: 0 0 8px; padding: 7px 10px; border-radius: 7px; font-size: .76rem;
+  background: color-mix(in srgb, #127a4b 9%, var(--card));
+  border: 1px solid color-mix(in srgb, #127a4b 32%, transparent);
+  color: var(--ink-2);
+}
+.liverow.k-real { border-left-color: #127a4b; }
+#live-feed .k-real::before { border-color: #127a4b; }
+.liverow.k-real .kind { color: #127a4b; }
+.stale { opacity: .6; }
+.stale .kind { color: var(--ink-3); }
+.realpin { fill: #127a4b; stroke: var(--card); stroke-width: 1.6; }
+.realpin.is-road { fill: #c07004; }
+
+/* ── traffic-light severity ─────────────────────────────────
+   Off the team's workflow board: "Severity — Traffic Lights".
+
+   Built as a SHAPE, not a colour swap. Red, orange and yellow already mean
+   tsunami evacuation zone on this map, so a coloured square would be
+   ambiguous exactly where ambiguity is expensive. A three-lamp signal with
+   one lit is unmistakable at a glance and cannot be confused with a zone
+   fill, and it still reads for anyone who cannot separate the hues, because
+   WHICH lamp is lit carries the meaning as well as its colour. */
+
+.tl {
+  display: inline-flex; flex-direction: column; gap: 1.5px;
+  padding: 2.5px; border-radius: 3px; vertical-align: middle;
+  background: color-mix(in srgb, var(--ink) 78%, transparent);
+  flex: none;
+}
+.tl i {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: color-mix(in srgb, #ffffff 16%, transparent);
+}
+.tl.t-extreme i:nth-child(1),
+.tl.t-severe  i:nth-child(1) { background: #ff4d43; box-shadow: 0 0 4px #ff4d43; }
+.tl.t-moderate i:nth-child(2) { background: #ffb020; box-shadow: 0 0 4px #ffb020; }
+.tl.t-minor    i:nth-child(3) { background: #3ddc84; box-shadow: 0 0 4px #3ddc84; }
+/* extreme pulses; nothing else moves, so movement means one thing only */
+.tl.t-extreme i:nth-child(1) { animation: tlpulse 1.4s ease-in-out infinite; }
+@keyframes tlpulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .tl.t-extreme i:nth-child(1) { animation: none; } }
+
+.tlwrap { display: inline-flex; align-items: center; gap: 5px; font-size: .74rem; }
+.tlwrap .lbl { color: var(--ink-2); font-weight: 600; }
+
+/* ═══ FOLDER TABS ═══════════════════════════════════════════
+   Ten sections is too many to hold in your head as one undifferentiated
+   row, so they are colour-coded into four families and shaped as folder
+   tabs sitting on a rule:
+
+     teal    the one view — everything on one map
+     green   yours — what you sent and what came back
+     amber   community — updates, the board, the map people build
+     grey    help
+     slate   operations — needs a card
+
+   Colour is the grouping and the SHAPE is the affordance; neither carries
+   the meaning alone, so it still reads for anyone who cannot separate the
+   hues, and the label always says what it is. */
+
+.tabs {
+  align-items: flex-end;
+  gap: 2px;
+  border-bottom: 2px solid var(--line);
+  padding-bottom: 0;
+  margin-bottom: -1px;
+}
+.tab {
+  position: relative;
+  border-radius: 8px 8px 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  padding: 8px 13px 9px;
+  margin-bottom: -2px;
+  background: transparent;
+  font-weight: 550;
+}
+/* the coloured spine along the top of each folder */
+.tab::after {
+  content: "";
+  position: absolute; left: 8px; right: 8px; top: 3px; height: 2.5px;
+  border-radius: 2px; background: var(--tabc, transparent);
+  opacity: .5; transition: opacity .15s ease;
+}
+.tab:hover { background: color-mix(in srgb, var(--tabc, var(--accent)) 9%, transparent); }
+.tab:hover::after { opacity: .9; }
+
+/* the open folder joins the page below it */
+.tab.is-active {
+  background: var(--card);
+  color: var(--ink);
+  font-weight: 700;
+  border-color: var(--line);
+  border-bottom: 2px solid var(--card);
+  box-shadow: 0 -2px 6px rgba(16,24,34,.05);
+}
+.tab.is-active::after { opacity: 1; height: 3px; }
+
+.tab.g-view { --tabc: #0a5f6b; }
+.tab.g-mine { --tabc: #127a4b; }
+.tab.g-comm { --tabc: #b26a00; }
+.tab.g-help { --tabc: #7285a0; }
+.tab.g-ops  { --tabc: #3d4f63; }
+
+/* Operations sit slightly apart — a different half of the product. */
+.tab.g-ops:first-of-type { margin-left: 10px; }
+.tab.g-ops { color: var(--ink-3); }
+.tab.g-ops.is-active { color: var(--ink); }
+
+/* The pill has to survive on an active folder. */
+.tab.is-active .pill { background: color-mix(in srgb, var(--tabc) 22%, transparent); color: var(--tabc); }
+
+@media (max-width: 900px) {
+  .tabs { border-bottom-width: 1px; }
+  .tab { padding: 8px 11px; font-size: .8rem; }
+  .tab.g-ops:first-of-type { margin-left: 6px; }
+}
+
+
+/* ═══ ACCESSIBILITY PASS ════════════════════════════════════
+   Measured, not assumed. An audit against the rendered page found muted
+   text at 3.76:1 and inactive tabs at 2.56:1 where AA needs 4.5:1 — the
+   grey that looked "quiet and tasteful" was unreadable for anyone with
+   even mild low vision, which in an emergency is the wrong tradeoff to
+   have made without noticing. */
+
+:root { --ink-3: #59697f; }          /* was #7285a0 — 3.76:1, now 5.1:1 */
+@media (prefers-color-scheme: dark) {
+  :root { --ink-3: #9fb2c6; }        /* lifted for the same reason */
+}
+.tab:not(.is-active) { color: var(--ink-2); }   /* was ink-3 at 2.56:1 */
+.tab.g-ops:not(.is-active) { color: var(--ink-2); opacity: .82; }
+.attrib, .hint { color: var(--ink-3); }
+
+/* Visible focus everywhere, including inside the folder tabs. */
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 1; }
+
+/* Screen-reader-only text: real labels for controls that only had a
+   placeholder. A placeholder disappears the moment somebody types, so it
+   was never a label. */
+.sronly {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ═══ LAYOUT ════════════════════════════════════════════════
+   The forms row used a 1fr/1fr grid under a 1fr/400px map row, so the
+   columns did not line up and the page read as two unrelated layouts
+   stacked. Same rhythm throughout, and more of the screen used on a
+   large display. */
+
+main { max-width: 1560px; }
+.split.live-forms { grid-template-columns: minmax(0, 1fr) minmax(0, 400px); }
+.split.live-forms > * { align-self: start; }
+@media (max-width: 900px) { .split.live-forms { grid-template-columns: 1fr; } }
+
+
+/* ── the forms row must not hold space open for a hidden form ──
+   "Publish an issue" only exists for card holders, but the grid reserved its
+   400px column regardless — so signed out, "Ask for help" stopped short with
+   a slab of dead space beside it while the panel above ran full width. The
+   page looked misaligned because it WAS.
+
+   Collapsed to one column whenever the second card is not there, so every
+   section on the Live map uses the same width as every other. */
+.split.live-forms.is-single { grid-template-columns: minmax(0, 1fr); }
+
+/* Same rule for the map row: the feed rail is always present, so the map and
+   the sections beneath it are deliberately different widths. Give the
+   full-width sections the same left edge and let them run to the page edge —
+   consistent, and the whole width is used. */
+#view-live > .card,
+#view-live > .split { width: 100%; }
+
+
+/* The map is a wide letterbox, not a square. Left uncapped, a full-width
+   container with a 4:3.4 ratio pushed it past the fold and the feed beside it
+   ran out long before the map ended. */
+.map.tall { aspect-ratio: 16 / 9; max-height: 62vh; }
+@media (max-width: 900px) { .map.tall { aspect-ratio: 4 / 4; max-height: none; } }
+
+
+/* photo fallback hosts */
+.hosts { margin-top: 8px; }
+.hosts summary { cursor: pointer; font-size: .82rem; color: var(--accent); font-weight: 600; }
+.hosts ul { margin: 6px 0; padding-left: 18px; font-size: .82rem; color: var(--ink-2); }
+.hosts li { margin-bottom: 3px; }
+
+/* map detail panel */
+.mapinfo {
+  margin-top: 8px; padding: 11px 13px; border-radius: 9px;
+  background: var(--paper); border: 1px solid var(--accent);
+  border-left-width: 3px; font-size: .86rem;
+}
+.mapinfo h4 { margin: 0 0 4px; font-size: .92rem; }
+.mapinfo .meta { font-size: .76rem; color: var(--ink-3); margin-bottom: 5px; }
+.mapinfo .close { float: right; }
+.pin, .stackpin, .reqpin, .issuepin, .res, .feedpin, .realpin { cursor: pointer; }
