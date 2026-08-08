@@ -5,6 +5,12 @@ Saturday 8 August 2026 · Waimanga Room, Wellington City Council
 
 ---
 
+## Presentation
+
+**https://canva.link/t3ote3fnzyl5har**
+
+---
+
 ## Problem 02 — Create a two-way information channel between communities and WCC
 
 > How might communities provide WCC with timely, structured information about local conditions, impacts and needs — before and during an emergency — and see that their information has been received?
