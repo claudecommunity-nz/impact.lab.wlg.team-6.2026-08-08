@@ -27,6 +27,7 @@ fresh clone works offline.
 from __future__ import annotations
 
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -263,6 +264,261 @@ def streets() -> list[dict]:
     return out
 
 
+# The coastline, so the harbour reads as water.
+#
+# This is the single biggest legibility win on the map, and the fiddliest to
+# produce. OpenStreetMap does not store the sea as a polygon: it stores
+# `natural=coastline` as a *directed line*, by convention with land on the
+# left. So the sea cannot simply be filled. The ways have to be joined head to
+# tail, clipped to the map extent, and closed along the extent boundary.
+#
+# Which way to walk that boundary is decided by TEST, not by argument. Whether
+# SVG's flipped y-axis inverts "clockwise" is exactly the kind of reasoning
+# that is wrong half the time and looks fine until someone notices the harbour
+# is a hill. So: build it both ways, then ask whether Civic Square is on land
+# and the middle of the harbour is not.
+LAND_ORACLES = [
+    ((174.7762, -41.2865), True, "Civic Square"),
+    ((174.7400, -41.2830), True, "Karori"),
+    ((174.8180, -41.3160), True, "Miramar peninsula"),
+    ((174.8660, -41.2570), True, "Matiu / Somes Island"),
+    ((174.8800, -41.2250), True, "Petone foreshore"),
+    ((174.7680, -41.3200), True, "Island Bay"),
+    ((174.9000, -41.2100), True, "Lower Hutt"),
+    ((174.9200, -41.2600), True, "eastern harbour hills"),
+    ((174.6500, -41.2000), False, "Tasman Sea, west"),
+    ((174.8300, -41.2750), False, "middle of the harbour"),
+    ((174.7500, -41.3550), False, "Cook Strait, south"),
+    ((174.8450, -41.3000), False, "outer harbour"),
+    ((174.7950, -41.3420), False, "Lyall Bay"),
+]
+COAST_TOLERANCE = 0.00006
+
+
+def _join_chains(ways: list[list[tuple]]) -> list[list[tuple]]:
+    """Join coastline ways head to tail.
+
+    Start only from ways that nothing else feeds into. Starting anywhere
+    consumes a chain from its middle, and it then stops short at the join —
+    which produced eight broken fragments instead of three clean ones.
+    """
+    heads: dict = {}
+    for i, pts in enumerate(ways):
+        heads.setdefault(pts[0], []).append(i)
+    tails = {pts[-1] for pts in ways}
+
+    out, consumed = [], set()
+
+    def grow(i: int) -> list[tuple]:
+        chain = list(ways[i])
+        consumed.add(i)
+        while True:
+            following = [j for j in heads.get(chain[-1], []) if j not in consumed]
+            if not following:
+                return chain
+            j = following[0]
+            consumed.add(j)
+            chain.extend(ways[j][1:])
+            if chain[-1] == chain[0]:
+                return chain
+
+    for i, pts in enumerate(ways):
+        if i not in consumed and pts[0] not in tails:
+            out.append(grow(i))
+    for i in range(len(ways)):          # whatever is left is a closed ring
+        if i not in consumed:
+            out.append(grow(i))
+    return out
+
+
+def _clip_segment(a, b, bbox):
+    """Liang-Barsky. Returns the visible span of a-b, or None."""
+    w, s, e, n = bbox
+    x0, y0 = a
+    dx, dy = b[0] - x0, b[1] - y0
+    t0, t1 = 0.0, 1.0
+    for p, q in ((-dx, x0 - w), (dx, e - x0), (-dy, y0 - s), (dy, n - y0)):
+        if p == 0:
+            if q < 0:
+                return None
+            continue
+        r = q / p
+        if p < 0:
+            if r > t1: return None
+            if r > t0: t0 = r
+        elif r < t0: return None
+        elif r < t1: t1 = r
+    return ((x0 + t0 * dx, y0 + t0 * dy), (x0 + t1 * dx, y0 + t1 * dy))
+
+
+def _clip_chain(chain, bbox):
+    """Clip a polyline to the extent, splitting where it leaves and returns."""
+    runs, current = [], []
+    for i in range(len(chain) - 1):
+        span = _clip_segment(chain[i], chain[i + 1], bbox)
+        if span is None:
+            if len(current) >= 2:
+                runs.append(current)
+            current = []
+            continue
+        a, b = span
+        if not current:
+            current = [a, b]
+        elif abs(current[-1][0] - a[0]) < 1e-9 and abs(current[-1][1] - a[1]) < 1e-9:
+            current.append(b)
+        else:
+            if len(current) >= 2:
+                runs.append(current)
+            current = [a, b]
+    if len(current) >= 2:
+        runs.append(current)
+    return runs
+
+
+def _perimeter_t(pt, bbox, eps=1e-7):
+    """Where a point sits on the extent boundary: 0-4 from the NW corner."""
+    w, s, e, n = bbox
+    x, y = pt
+    if abs(y - n) < eps: return 0 + (x - w) / (e - w)
+    if abs(x - e) < eps: return 1 + (n - y) / (n - s)
+    if abs(y - s) < eps: return 2 + (e - x) / (e - w)
+    if abs(x - w) < eps: return 3 + (y - s) / (n - s)
+    return None
+
+
+def _perimeter_pt(t, bbox):
+    w, s, e, n = bbox
+    t %= 4
+    if t < 1: return (w + t * (e - w), n)
+    if t < 2: return (e, n - (t - 1) * (n - s))
+    if t < 3: return (e - (t - 2) * (e - w), s)
+    return (w, s + (t - 3) * (n - s))
+
+
+def _close_along_boundary(runs, bbox, forward: bool):
+    """Turn clipped coastline runs into closed land polygons."""
+    def is_ring(r):
+        return abs(r[0][0] - r[-1][0]) < 1e-9 and abs(r[0][1] - r[-1][1]) < 1e-9
+
+    polygons = [r for r in runs if is_ring(r)]           # islands, already closed
+    edges = []
+    for run in runs:
+        if is_ring(run):
+            continue
+        start, end = _perimeter_t(run[0], bbox), _perimeter_t(run[-1], bbox)
+        if start is not None and end is not None:
+            edges.append({"pts": run, "start": start, "end": end})
+
+    unused = set(range(len(edges)))
+    while unused:
+        first = min(unused)
+        polygon, cursor = [], first
+        while True:
+            unused.discard(cursor)
+            polygon.extend(edges[cursor]["pts"])
+            here = edges[cursor]["end"]
+            # the next coastline run reached soonest along the boundary
+            best, best_gap = None, None
+            for j, edge in enumerate(edges):
+                gap = (edge["start"] - here) % 4 if forward else (here - edge["start"]) % 4
+                if gap < 1e-9:
+                    gap += 4
+                if best_gap is None or gap < best_gap:
+                    best, best_gap = j, gap
+            if best is None:
+                break
+            # Insert the extent corners crossed on the way, at the INTEGER
+            # values of t between here and the next run — not at here+1,
+            # here+2, which is a different set of points entirely and closes
+            # the polygon with a diagonal shortcut straight across the map.
+            # That version passed all ten land/sea checks while drawing the
+            # Hutt Valley as open water, because no check sat near the seam.
+            if forward:
+                t = math.floor(here) + 1
+                while t < here + best_gap - 1e-9:
+                    polygon.append(_perimeter_pt(t, bbox))
+                    t += 1
+            else:
+                t = math.ceil(here) - 1
+                while t > here - best_gap + 1e-9:
+                    polygon.append(_perimeter_pt(t, bbox))
+                    t -= 1
+            if best == first or best not in unused:
+                break
+            cursor = best
+        if len(polygon) >= 4:
+            polygons.append(polygon)
+    return polygons
+
+
+def _contains(pt, polygons) -> bool:
+    """Ray casting across every polygon at once."""
+    x, y = pt
+    crossings = 0
+    for polygon in polygons:
+        for i in range(len(polygon)):
+            x0, y0 = polygon[i]
+            x1, y1 = polygon[(i + 1) % len(polygon)]
+            if (y0 > y) != (y1 > y) and x0 + (y - y0) / (y1 - y0) * (x1 - x0) > x:
+                crossings += 1
+    return crossings % 2 == 1
+
+
+def coastline() -> list[list[list[float]]]:
+    """Land polygons for the map extent, so everything else can be sea."""
+    import urllib.parse, urllib.request
+
+    print("  openstreetmap coastline ...", end=" ", flush=True)
+    started = time.time()
+    bbox = wcc_gis.WELLINGTON
+    w, s, e, n = bbox
+    query = (f'[out:json][timeout:120];(way["natural"="coastline"]'
+             f'({s},{w},{n},{e}););out geom;')
+    try:
+        raw = urllib.request.urlopen(urllib.request.Request(
+            OVERPASS, data=urllib.parse.urlencode({"data": query}).encode(),
+            headers={"User-Agent": "impact-lab-team6/1.0 (Wellington emergency prototype)"}),
+            timeout=180).read()
+        payload = json.loads(raw)
+    except Exception as exc:
+        print(f"unavailable ({type(exc).__name__}) — map falls back to a flat backdrop")
+        return []
+
+    ways = []
+    for way in payload.get("elements", []):
+        pts = [(round(p["lon"], 6), round(p["lat"], 6)) for p in way.get("geometry") or []]
+        if len(pts) >= 2:
+            ways.append(pts)
+
+    runs = []
+    for chain in _join_chains(ways):
+        runs.extend(_clip_chain(chain, bbox))
+
+    for forward in (True, False):
+        polygons = _close_along_boundary(runs, bbox, forward)
+        if all(_contains(pt, polygons) == want for pt, want, _ in LAND_ORACLES):
+            break
+    else:
+        # Neither direction puts the city on land. Drawing it anyway would put
+        # the harbour where the hills are, which is worse than no water at all.
+        wrong = [name for pt, want, name in LAND_ORACLES
+                 if _contains(pt, polygons) != want]
+        print(f"failed the land/sea check ({', '.join(wrong)}) — skipping water")
+        return []
+
+    raw_points = sum(len(p) for p in polygons)
+    simplified = [_simplify_line(p, COAST_TOLERANCE) for p in polygons]
+    simplified = [p for p in simplified if len(p) >= 4]
+    if not all(_contains(pt, simplified) == want for pt, want, _ in LAND_ORACLES):
+        print("simplification broke the land/sea check — keeping full detail")
+        simplified = polygons
+
+    kept = sum(len(p) for p in simplified)
+    print(f"{len(simplified)} land polygons, {kept} of {raw_points} points kept, "
+          f"all {len(LAND_ORACLES)} land/sea checks pass, in {time.time() - started:.1f}s")
+    return [[[round(x, 5), round(y, 5)] for x, y in p] for p in simplified]
+
+
 def gazetteer() -> list[dict]:
     """Street and suburb names with a point, for offline address lookup.
 
@@ -310,25 +566,89 @@ def gazetteer() -> list[dict]:
     return places
 
 
+def labels() -> list[dict]:
+    """Suburb and town names, for drawing on the map.
+
+    A street network with no names on it makes people hunt for their own area
+    by shape, which nobody can do under stress. Ranked so the renderer can
+    thin them out as the map shrinks rather than overprinting itself.
+    """
+    import urllib.parse, urllib.request
+
+    print("  openstreetmap place names ...", end=" ", flush=True)
+    started = time.time()
+    w, s, e, n = wcc_gis.WELLINGTON
+    rank = {"city": 0, "town": 1, "suburb": 2, "village": 2}
+    query = (f'[out:json][timeout:60];(node["place"~"^(city|town|suburb|village)$"]'
+             f'({s},{w},{n},{e}););out;')
+    try:
+        raw = urllib.request.urlopen(urllib.request.Request(
+            OVERPASS, data=urllib.parse.urlencode({"data": query}).encode(),
+            headers={"User-Agent": "impact-lab-team6/1.0 (Wellington emergency prototype)"}),
+            timeout=120).read()
+        payload = json.loads(raw)
+    except Exception as exc:
+        print(f"unavailable ({type(exc).__name__}) — map draws without names")
+        return []
+
+    out = []
+    for node in payload.get("elements", []):
+        tags = node.get("tags") or {}
+        name = tags.get("name")
+        if not name:
+            continue
+        out.append({"n": name, "r": rank.get(tags.get("place"), 2),
+                    "y": round(node["lat"], 4), "x": round(node["lon"], 4)})
+    out.sort(key=lambda p: (p["r"], p["n"]))
+    print(f"{len(out)} names in {time.time() - started:.1f}s")
+    return out
+
+
 def main() -> int:
     print("\nFetching WCC layers (live, from council servers):")
     features = zone_layer() + hub_layer()
 
     places = gazetteer()
     roads = streets()
+    time.sleep(5)                      # Overpass rate-limits back to back calls
+    land = coastline()
+    time.sleep(45)
+    names = labels()
 
     payload = {
         "type": "FeatureCollection",
         "places": places,
         "streets": roads,
+        "land": land,
+        "labels": names,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "attribution": (
             "Tsunami evacuation zones and Community Emergency Hubs: "
             "Wellington City Council / Greater Wellington Regional Council. "
-            "Hazard-planning layers, not live emergency information."
+            "Hazard-planning layers, not live emergency information. "
+            "Coastline, streets and place names: OpenStreetMap contributors, "
+            "ODbL."
         ),
         "features": features,
     }
+
+    # Never let a failed fetch delete a layer that is already baked.
+    #
+    # Overpass rate-limits three heavy queries in a row, each fetch returns []
+    # on failure, and the first run of this merge-less version quietly replaced
+    # 6,527 streets and the whole coastline with nothing. The file still looked
+    # valid; the map just lost its water. A partial refresh must degrade to
+    # "keep what we had", never to "publish less".
+    if OUT.exists():
+        try:
+            existing = json.loads(OUT.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            existing = {}
+        for layer in ("places", "streets", "land", "labels", "features"):
+            if not payload.get(layer) and existing.get(layer):
+                payload[layer] = existing[layer]
+                print(f"     ⚠  {layer}: fetch failed, kept the {len(existing[layer])} "
+                      f"already baked. Re-run to refresh them.")
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
