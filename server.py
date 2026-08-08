@@ -187,6 +187,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/community/evidence":
             return self._post_evidence()
 
+        if path == "/api/upload":
+            return self._post_upload()
+
         try:
             body = self._read_json()
         except ValueError as exc:
@@ -768,6 +771,46 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as exc:
             return self._error(400, str(exc))
         return self._send(201, {"ok": True})
+
+    def _post_upload(self) -> None:
+        """Store one image and hand back its URL. Nothing else.
+
+        The report form needs a photo before the report exists, so this is
+        separate from the evidence flow: upload, get a URL, then submit the
+        report with it attached. Same validation as everywhere else — magic
+        bytes, metadata stripped, random name.
+        """
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0:
+            return self._error(400, "empty upload")
+        if length > MAX_UPLOAD_BYTES:
+            return self._error(413, "that photo is too large — 8 MB maximum")
+
+        try:
+            fields = parse_multipart(self.rfile.read(length),
+                                     self.headers.get("Content-Type", ""))
+        except ValueError as exc:
+            return self._error(400, str(exc))
+
+        image = fields.get("image")
+        if not isinstance(image, bytes):
+            return self._error(400, "no image in that upload")
+
+        found = read_location(image)          # read BEFORE stripping
+        try:
+            stored = store_image(image)
+        except TooLarge as exc:
+            return self._error(413, str(exc))
+        except BadImage as exc:
+            return self._error(415, str(exc))
+
+        return self._send(201, {
+            "url": stored["url"],
+            "bytes": stored["bytes"],
+            "metadata_stripped": stored["stripped"],
+            "found_location": bool(found.get("lat")),
+            "lat": found.get("lat"), "lng": found.get("lng"),
+        })
 
     def _post_evidence(self) -> None:
         """multipart/form-data: an image plus a caption."""

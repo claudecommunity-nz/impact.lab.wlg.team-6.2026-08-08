@@ -457,6 +457,37 @@ async function submitReport(event) {
     media_urls: (data.get('media_url') || '').trim() ? [data.get('media_url').trim()] : [],
   };
 
+  // Upload first, then attach. The photo has to exist before the report does,
+  // and if the upload fails the person should not lose what they typed.
+  const file = $('#report-photo').files[0];
+  if (file) {
+    const note = $('#report-photo-note');
+    note.hidden = false;
+    note.className = 'exifreadout';
+    note.textContent = 'Uploading the photo…';
+    const form = new FormData();
+    form.append('image', file);
+    try {
+      const res = await fetch('/api/upload', { method: 'POST', body: form });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'the photo would not upload');
+      payload.media_urls.push(result.url);
+      if (result.found_location && payload.lat == null) {
+        payload.lat = result.lat;
+        payload.lng = result.lng;
+        setLocation(result.lat, result.lng, 'From the photo');
+      }
+      note.textContent = (result.found_location
+        ? `The photo knew where it was — pin placed for you. `
+        : 'Photo attached. ')
+        + (result.metadata_stripped ? 'Metadata removed from the published copy.' : '');
+    } catch (err) {
+      note.className = 'exifreadout none';
+      note.textContent = `${err.message}. You can still send the report, or paste a link instead.`;
+      return;   // let them decide rather than silently dropping the photo
+    }
+  }
+
   if (!payload.title) return void showError('#report-error', 'Say what is happening, even in a few words.');
 
   btn.disabled = true;
@@ -789,6 +820,10 @@ async function boot() {
     opsMap.drawBasemap(state.basemap);
     fillPlaceSuggestions();
     drawNearRing(reportMap);
+    // Maps created before this point need the backdrop applying now.
+    for (const m of [liveMap, communityMap]) {
+      if (m && !m._drawn) { m.drawBasemap(state.basemap); m._drawn = true; }
+    }
     $('#attrib').textContent = state.basemap.attribution || '';
   } catch (_) {
     $('#attrib').textContent = 'Basemap unavailable — run tools/fetch_basemap.py.';
@@ -1685,7 +1720,6 @@ async function renderCommunity() {
 
   if (!communityMap) {
     communityMap = new Map($('#map-community'), state.meta.extent);
-    if (state.basemap) communityMap.drawBasemap(state.basemap);
     communityMap.svg.addEventListener('click', event => {
       const point = communityMap.latlng(event.clientX, event.clientY);
       if (point) {
@@ -1696,6 +1730,10 @@ async function renderCommunity() {
           `Pin set by hand: ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`;
       }
     });
+  }
+  if (state.basemap && !communityMap._drawn) {
+    communityMap.drawBasemap(state.basemap);
+    communityMap._drawn = true;
   }
   drawNearRing(communityMap);
   drawCommunityPins(c);
@@ -2019,7 +2057,14 @@ async function renderLive() {
 
   if (!liveMap) {
     liveMap = new Map($('#map-live'), state.meta.extent);
-    if (state.basemap) liveMap.drawBasemap(state.basemap);
+  }
+  // Draw the backdrop whenever it is available and has not been drawn yet.
+  // Previously this only ran at map creation — and renderLive can run before
+  // the basemap fetch finishes, which left the map as bare pins on an empty
+  // rectangle with no coastline and no evacuation zones.
+  if (state.basemap && !liveMap._drawn) {
+    liveMap.drawBasemap(state.basemap);
+    liveMap._drawn = true;
   }
 
   // Vocabularies arrive with the data, so the chips cannot drift from what
@@ -2038,7 +2083,11 @@ async function renderLive() {
     });
   }
 
+  // Collapse the forms row to a single column when the second card is not
+  // shown, so the grid stops reserving space for something that is not there.
   $('#issue-form').hidden = !data.official_view;
+  const formsRow = document.querySelector('.split.live-forms');
+  if (formsRow) formsRow.classList.toggle('is-single', !data.official_view);
 
   drawLivePins(data);
   drawRealtimePins(liveMap);
@@ -2050,40 +2099,50 @@ function drawLivePins(data) {
   layer.textContent = '';
   drawNearRing(liveMap);
 
-  const add = (item, cls, radius, label) => {
+  const add = (item, cls, radius, label, kind) => {
     if (item.lat == null || item.lng == null) return;
     const el = document.createElementNS(SVG_NS, 'circle');
     el.setAttribute('cx', liveMap.x(item.lng).toFixed(1));
     el.setAttribute('cy', liveMap.y(item.lat).toFixed(1));
     el.setAttribute('r', String(radius));
     el.setAttribute('class', cls + (withinNear(item) ? '' : ' is-far'));
+    // Native title = hover. Click opens the full detail, because a tooltip
+    // cannot be read on a phone and cannot be copied from.
     const t = document.createElementNS(SVG_NS, 'title');
     t.textContent = label;
     el.appendChild(t);
+    el.setAttribute('tabindex', '0');
+    el.setAttribute('role', 'button');
+    el.setAttribute('aria-label', label);
+    const open = () => showMapInfo(item, kind);
+    el.addEventListener('click', open);
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+    });
     layer.appendChild(el);
   };
 
   if (state.layers.stacks) {
     for (const s of data.stacks || []) {
       add(s, 'stackpin', Math.min(6 + s.pieces * 3, 22),
-          `${s.title} — ${s.pieces} piece(s) from ${s.witnesses} source(s)`);
+          `${s.title} — ${s.pieces} piece(s) from ${s.witnesses} source(s)`, 'stack');
     }
   }
   if (state.layers.resources) {
-    for (const r of data.resources || []) add(r, 'res', 5, r.title);
+    for (const r of data.resources || []) add(r, 'res', 5, r.title, 'resource');
   }
   if (state.layers.feeds) {
-    for (const f of data.feeds || []) add(f, 'feedpin', 5, `${f.title} — live feed`);
+    for (const f of data.feeds || []) add(f, 'feedpin', 5, `${f.title} — live feed`, 'feed');
   }
   if (state.layers.issues) {
     for (const i of data.issues || []) {
-      add(i, 'issuepin', 8, `WCC: ${i.title} — ${i.state_label}`);
+      add(i, 'issuepin', 8, `WCC: ${i.title} — ${i.state_label}`, 'issue');
     }
   }
   if (state.layers.requests) {
     for (const r of data.requests || []) {
       add(r, 'reqpin' + (r.urgency === 'now' ? ' is-urgent' : ''), 7,
-          `Help needed: ${r.title} — ${r.likelihood_label}`);
+          `Help needed: ${r.title} — ${r.likelihood_label}`, 'request');
     }
   }
 }
@@ -2555,4 +2614,55 @@ function renderAccount() {
       renderAccount();
     } catch (err) { showError('#account-error', err.message); }
   });
+}
+
+/* ── clicking a pin ──────────────────────────────────────────────────────
+ *
+ * Every pin has a native title, which is a hover tooltip — useless on a
+ * phone, unreadable by a screen reader in any useful way, and impossible to
+ * copy a reference code out of. Clicking (or pressing Enter on) a pin opens
+ * the detail below the map instead.
+ */
+
+const MAP_INFO_KINDS = {
+  stack: 'Reports & photos', request: 'Help needed', issue: 'WCC issue',
+  resource: 'Offer of help', feed: 'Live feed',
+};
+
+function showMapInfo(item, kind) {
+  const box = $('#map-info');
+  const rows = [];
+
+  if (kind === 'stack') {
+    rows.push(`${item.pieces} piece${item.pieces === 1 ? '' : 's'} of evidence · ` +
+              `${item.reports} report${item.reports === 1 ? '' : 's'} · ` +
+              `${item.photos} photo${item.photos === 1 ? '' : 's'} · ` +
+              `${item.witnesses} source${item.witnesses === 1 ? '' : 's'}`);
+  }
+  if (kind === 'request') {
+    rows.push(`${item.urgency_label || ''} · ${item.likelihood_label || 'Waiting for WCC'}` +
+              (item.timeframe_label ? ` · ${item.timeframe_label}` : ''));
+  }
+  if (kind === 'issue') rows.push(item.state_label || '');
+  if (kind === 'feed') rows.push(item.url || '');
+  if (item.place_name) rows.push(item.place_name);
+  if (item.at) rows.push(ago(item.at));
+
+  const images = (item.images || item.media_urls || []).filter(u => safeUrl(u)).slice(0, 3);
+
+  box.hidden = false;
+  box.innerHTML = `
+    <button class="btn tiny ghost close" id="map-info-close">Close</button>
+    <div class="meta">${esc(MAP_INFO_KINDS[kind] || 'On the map')}</div>
+    <h4>${esc(item.title || 'Unnamed')}</h4>
+    <div class="meta">${esc(rows.filter(Boolean).join(' · '))}</div>
+    ${item.detail || item.body ? `<p>${esc(item.detail || item.body)}</p>` : ''}
+    ${item.severity ? trafficLight(item.severity) : ''}
+    ${images.length ? `<div class="thumbs">${images
+      .map(u => `<img src="${esc(safeUrl(u))}" alt="Photo" loading="lazy">`).join('')}</div>` : ''}
+    ${safeUrl(item.url) ? `<p><a href="${esc(safeUrl(item.url))}" target="_blank"
+       rel="noopener noreferrer nofollow">Open the feed</a></p>` : ''}`;
+
+  $('#map-info-close').addEventListener('click', () => { box.hidden = true; });
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }

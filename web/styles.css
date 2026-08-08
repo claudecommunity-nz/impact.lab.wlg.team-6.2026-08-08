@@ -1055,3 +1055,46 @@ main { max-width: 1560px; }
 .split.live-forms { grid-template-columns: minmax(0, 1fr) minmax(0, 400px); }
 .split.live-forms > * { align-self: start; }
 @media (max-width: 900px) { .split.live-forms { grid-template-columns: 1fr; } }
+
+
+/* ── the forms row must not hold space open for a hidden form ──
+   "Publish an issue" only exists for card holders, but the grid reserved its
+   400px column regardless — so signed out, "Ask for help" stopped short with
+   a slab of dead space beside it while the panel above ran full width. The
+   page looked misaligned because it WAS.
+
+   Collapsed to one column whenever the second card is not there, so every
+   section on the Live map uses the same width as every other. */
+.split.live-forms.is-single { grid-template-columns: minmax(0, 1fr); }
+
+/* Same rule for the map row: the feed rail is always present, so the map and
+   the sections beneath it are deliberately different widths. Give the
+   full-width sections the same left edge and let them run to the page edge —
+   consistent, and the whole width is used. */
+#view-live > .card,
+#view-live > .split { width: 100%; }
+
+
+/* The map is a wide letterbox, not a square. Left uncapped, a full-width
+   container with a 4:3.4 ratio pushed it past the fold and the feed beside it
+   ran out long before the map ended. */
+.map.tall { aspect-ratio: 16 / 9; max-height: 62vh; }
+@media (max-width: 900px) { .map.tall { aspect-ratio: 4 / 4; max-height: none; } }
+
+
+/* photo fallback hosts */
+.hosts { margin-top: 8px; }
+.hosts summary { cursor: pointer; font-size: .82rem; color: var(--accent); font-weight: 600; }
+.hosts ul { margin: 6px 0; padding-left: 18px; font-size: .82rem; color: var(--ink-2); }
+.hosts li { margin-bottom: 3px; }
+
+/* map detail panel */
+.mapinfo {
+  margin-top: 8px; padding: 11px 13px; border-radius: 9px;
+  background: var(--paper); border: 1px solid var(--accent);
+  border-left-width: 3px; font-size: .86rem;
+}
+.mapinfo h4 { margin: 0 0 4px; font-size: .92rem; }
+.mapinfo .meta { font-size: .76rem; color: var(--ink-3); margin-bottom: 5px; }
+.mapinfo .close { float: right; }
+.pin, .stackpin, .reqpin, .issuepin, .res, .feedpin, .realpin { cursor: pointer; }

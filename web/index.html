@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Report to WCC — two-way community channel</title>
+<title>Impact Hub Wellington 2026 · Team 6 — Community ↔ WCC</title>
 <meta name="description" content="Report local conditions to Wellington City Council and see what happens to your report. Impact Lab Wellington, Team 6, Problem 02.">
 <meta name="color-scheme" content="light dark">
 <!-- Inline data URI, not a file: keeps the app to three assets and avoids a
@@ -18,7 +18,7 @@
     <span class="mark" aria-hidden="true"></span>
     <div>
       <strong>Community &harr; WCC</strong>
-      <span class="sub">Two-way reporting channel</span>
+      <span class="sub">Impact Hub Wellington 2026 · Team 6</span>
     </div>
   </div>
   <nav class="tabs" role="tablist" aria-label="Sections">
@@ -115,6 +115,7 @@
         <div class="layers" id="live-layers"></div>
         <p class="realnote" id="real-note" hidden></p>
         <div id="map-live" class="map tall"></div>
+        <div class="mapinfo" id="map-info" hidden aria-live="polite"></div>
         <p class="attrib">
           Everything on one map: what people reported, what they photographed,
           what they are asking for, what they can offer, and what WCC has
@@ -224,10 +225,34 @@
           <div class="chips" id="reporter-kinds"></div>
         </fieldset>
 
-        <label>
-          <span>Link to a photo <em>optional</em></span>
-          <input name="media_url" type="url" maxlength="2000" placeholder="https://...">
-        </label>
+        <fieldset>
+          <legend>A photo <em>optional</em></legend>
+          <p class="hint">
+            If the photo still has its location, we read it to place the pin,
+            show you what we read, then strip the metadata from the copy we publish.
+          </p>
+          <input type="file" id="report-photo" accept="image/jpeg,image/png"
+                 aria-label="Choose a photo to attach">
+          <p class="exifreadout" id="report-photo-note" hidden></p>
+          <details class="hosts">
+            <summary>No luck uploading? Paste a link instead</summary>
+            <p class="hint">
+              Upload it to one of these and paste the link — all free, no account
+              needed, and they do not require you to sign in to view:
+            </p>
+            <ul class="links">
+              <li><a href="https://postimages.org/" target="_blank" rel="noopener noreferrer">postimages.org</a> — no account, direct links</li>
+              <li><a href="https://imgbb.com/" target="_blank" rel="noopener noreferrer">imgbb.com</a> — no account, set an expiry if you want</li>
+              <li><a href="https://catbox.moe/" target="_blank" rel="noopener noreferrer">catbox.moe</a> — no account, permanent</li>
+            </ul>
+            <p class="hint">
+              A link you paste is <strong>not</strong> stripped of metadata by us —
+              that is on the host. Prefer uploading here if you can.
+            </p>
+            <input name="media_url" type="url" maxlength="2000"
+                   placeholder="https://..." aria-label="Link to a photo">
+          </details>
+        </fieldset>
 
         <button type="submit" class="btn primary" id="submit-btn">Send to WCC</button>
         <p class="formnote">
@@ -775,7 +800,7 @@
 </main>
 
 <footer>
-  <span>Team 6 · Problem 02 · Impact Lab Wellington</span>
+  <span>Impact Hub Wellington 2026 · Team 6 · Problem 02</span>
   <a href="/api/geojson">/api/geojson</a>
   <a href="/api/signals">/api/signals</a>
   <a href="/api/health">/api/health</a>
