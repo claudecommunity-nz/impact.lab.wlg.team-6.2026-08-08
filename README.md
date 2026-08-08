@@ -75,6 +75,49 @@ information has been received" — as a working thing rather than a diagram.
 - **It composes.** `/api/geojson` and `/api/signals` are CORS-open and need no
   key, so any other team's map can read this module directly.
 
+### The message board
+
+The reporting loop is one-to-one. The board is the other half — everyone
+talking to everyone, with officials clearly identifiable. Three surfaces, all
+on the same append-only log:
+
+- **Agency wall** — eight real agencies (WCC Emergency Management, WREMO,
+  Wellington Water, FENZ, Police, Greater Wellington, Free Ambulance, Red
+  Cross), each its own channel, all on one screen. Officials coordinating with
+  each other. **The public are not in these** — a public request for an agency
+  channel is a 403, and agency channels are absent from the public channel
+  list entirely rather than filtered out of it.
+- **Public boards** — city-wide plus one per suburb. Anyone posts; officials
+  are badged with their agency, everyone else is a neighbour.
+- **Important comms banner** — officials publish one line and it appears at
+  the top of every public screen at once, at four escalating levels.
+
+The author picks **Everyone can see this** or **Only officials** per message —
+the second for anything about a named person, like a welfare concern about a
+neighbour. Officials can flag a message, which takes it out of the public feed
+and leaves a visible marker in its place.
+
+That last detail matters. Because the log is append-only, a flag is a *new*
+signal chaining to the message, never an edit or a delete, so **moderation on
+a public emergency board cannot silently erase what somebody said**. Clearing
+the banner works the same way — another entry, not a deletion, so afterwards
+you can say exactly what was displayed and for how long.
+
+No new storage and no new dependency: a message is a `chat-message` signal, a
+flag is a `chat-flag` chaining to it, the banner is a `comms-banner`. The
+existing `?since=` cursor already makes it live.
+
+**Identity is deliberately absent**, matching the reference-code model — a
+random per-browser `author_id` in `localStorage` that proves nothing and only
+lets the board show you your own private messages after a reload. Officials
+are marked by a client-set role, so on a public deployment anyone can claim
+one. That is the first thing this needs before it is more than a demo.
+
+**The demo content is invented.** `demo_data.py` fills the board with one
+coherent scenario matching the seeded reports. The agencies are real so a WCC
+judge sees their own operating picture, but none of them wrote any of it and
+it describes no real incident — the agency wall says so on screen.
+
 ### The map has no dependencies
 
 Plain SVG: real WCC GeoJSON projected into a viewBox, about eighty lines in
@@ -87,11 +130,13 @@ wifi does. `tools/fetch_basemap.py` bakes the geometry to
 ### Tests
 
 ```bash
-python3 -m unittest discover tests -v      # 22 tests, ~0.4s
+python3 -m unittest discover tests -v      # 46 tests, ~0.6s
 ```
 
 Standard library `unittest`, no pytest. They cover the things that would break
-the demo or mislead the council: acknowledgement fires without a human, status
+the demo or mislead the council, plus every message-board visibility rule —
+who can read an agency channel, whether a private message leaks, and that
+flagging never deletes: acknowledgement fires without a human, status
 is derived rather than stored, the log survives a restart including a torn
 final line, grouping does what the interface claims, and GeoJSON comes out
 lng/lat the right way round.
