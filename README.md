@@ -1,7 +1,12 @@
 # Community &harr; WCC — a two-way reporting channel
 
-**Impact Lab Wellington · Team 6 · Problem 02**
+**Impact Hub Wellington 2026 · Team 6 · Problem 02**
 Wellington City Council Emergency Management × Claude Code Community NZ
+
+### ▶ [Watch the walkthrough](https://impact-lab.bitn.cloud/walkthrough.mp4) · 📊 [Open the presentation](https://impact-lab.bitn.cloud/presentation.html) · 🌐 [Use the live product](https://impact-lab.bitn.cloud)
+
+*Narrated 2m35s video · 12-slide deck for a 3-minute talk · the real thing,
+running, with live NZTA and river-gauge data.*
 
 A working prototype of the thing Problem 02 asks for: a route for communities
 to report local conditions to Wellington City Council, and — the part that
@@ -10,17 +15,25 @@ happening to it**.
 
 ![Walkthrough](walkthrough.gif)
 
-**[▶ Watch the walkthrough (MP4, 2m35s, with narration)](walkthrough.mp4)**
-— recorded against the live site. Script in **[VOICEOVER.md](VOICEOVER.md)**.
-The GIF above is silent; the MP4 has the voiceover.
+### ▶ Watch and present
+
+| | |
+|---|---|
+| **[Narrated walkthrough (2m35s)](https://impact-lab.bitn.cloud/walkthrough.mp4)** | Hosted — plays in the browser. Script: [VOICEOVER.md](VOICEOVER.md) |
+| **[Presentation (12 slides, 3 min)](https://impact-lab.bitn.cloud/presentation.html)** | Hosted — press `F` for fullscreen. Talking points: [PRESENTATION.md](PRESENTATION.md) |
+| **[The product itself](https://impact-lab.bitn.cloud)** | Live, with real NZTA and river-gauge data |
+
+Both are hosted rather than only committed, because GitHub will not play a
+5 MB MP4 inline. The GIF above is the silent preview; the hosted MP4 has the
+voiceover.
 
 ---
 
 ## Run it
 
 ```bash
-git clone https://github.com/jasonagnewnz/wcc-two-way-channel
-cd wcc-two-way-channel
+git clone https://github.com/claudecommunity-nz/impact.lab.wlg.team-6.2026-08-08
+cd impact.lab.wlg.team-6.2026-08-08
 python3 run.py --seed
 ```
 
