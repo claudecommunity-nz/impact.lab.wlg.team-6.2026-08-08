@@ -31,7 +31,16 @@ closed-off demo.
 Two teams work each problem statement independently. That's deliberate: two
 honest attempts at the same problem tell WCC more than one.
 
-## The prototype — run it
+## The prototype
+
+![Walkthrough](walkthrough.gif)
+
+**[▶ Watch the 2-minute walkthrough (MP4)](walkthrough.mp4)** — captioned, no sound.
+Narration script in **[VOICEOVER.md](VOICEOVER.md)**.
+
+Live: **https://impact-lab.bitn.cloud** · Demo cards: **[DEMO_CARDS.md](DEMO_CARDS.md)**
+
+## Run it
 
 ```bash
 python3 run.py --seed
