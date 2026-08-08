@@ -25,7 +25,7 @@ const state = {
   openOps: null,     // which ops card is expanded
   authorId: null,    // per-browser token; possession, not authentication
   displayName: '',
-  boardChannel: 'wellington',
+  boardChannel: '__all__',
   channels: { public: [], agency: [] },
   banner: null,
   near: null,        // {lat,lng,radius,label} — this browser only, never sent
@@ -879,10 +879,11 @@ async function loadChannels() {
 
 function renderBoardChannels() {
   const wrap = $('#board-channels');
-  wrap.innerHTML = (state.channels.public || []).map(c => `
+  const everything = [{ id: '__all__', name: 'Everything being said', messages: '' }];
+  wrap.innerHTML = everything.concat(state.channels.public || []).map(c => `
     <button class="chan ${c.id === state.boardChannel ? 'is-active' : ''}" data-chan="${esc(c.id)}">
       <span class="n">${esc(c.name)}</span>
-      <span class="c">${c.messages || 0}</span>
+      <span class="c">${c.messages === '' ? '' : (c.messages || 0)}</span>
     </button>`).join('');
   $$('[data-chan]', wrap).forEach(btn => {
     btn.addEventListener('click', () => {
@@ -894,6 +895,8 @@ function renderBoardChannels() {
 }
 
 async function renderBoard() {
+  renderAccount();
+  if (state.boardChannel === '__all__') return renderEverything();
   const channel = (state.channels.public || []).find(c => c.id === state.boardChannel);
   $('#board-title').textContent = channel ? channel.name : state.boardChannel;
 
@@ -907,6 +910,7 @@ async function renderBoard() {
     return;
   }
 
+  $('#board-composer').hidden = false;
   $('#board-count').textContent = `${messages.length} message${messages.length === 1 ? '' : 's'}`;
   const box = $('#board-messages');
   const wasAtBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
@@ -1100,6 +1104,7 @@ async function refreshSession() {
     state.session = null;
   }
   renderWho();
+  renderAccount();
 }
 
 function renderWho() {
@@ -2393,4 +2398,108 @@ function trafficLight(severity, { withLabel = true } = {}) {
     <span class="tl ${s.cls}" role="img" aria-label="Severity ${esc(s.label)}">${lamps}</span>
     ${withLabel ? `<span class="lbl">${esc(s.label)}</span>` : ''}
   </span>`;
+}
+
+/* ── everything being said, on one page ──────────────────────────────────
+ *
+ * The board, the agency channels and WCC's updates are separate surfaces
+ * because they have different rules about who may write. But somebody
+ * arriving mid-emergency wants one place that answers "what is being said",
+ * not four tabs checked in turn — so "Everything" merges them, newest first,
+ * with each message still carrying where it came from.
+ */
+
+async function renderEverything() {
+  let data;
+  try { data = await api(`/api/comms?author_id=${encodeURIComponent(state.authorId)}`); }
+  catch (err) {
+    $('#board-messages').innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+    return;
+  }
+
+  const c = data.counts || {};
+  $('#board-composer').hidden = true;   // pick a board to post to
+  $('#board-title').textContent = 'Everything being said';
+  $('#board-count').textContent =
+    `${c.board} on the boards · ${c.agency} between agencies · ${c.updates} updates`;
+
+  const box = $('#board-messages');
+  box.innerHTML = data.messages.length ? data.messages.map(m => {
+    const isOfficial = m.author_role === 'official';
+    const tags = [];
+    if (m.stream === 'agency') tags.push('<span class="tag t-official">Between agencies</span>');
+    if (m.stream === 'update') tags.push('<span class="tag t-official">WCC update</span>');
+    if (m.urgent) tags.push('<span class="tag t-flagged">Urgent</span>');
+    if (m.visibility === 'officials') tags.push('<span class="tag t-private">Private</span>');
+    if (m.author_role === 'hub') tags.push('<span class="tag t-hub">Emergency hub</span>');
+
+    if (m.withheld) {
+      return `<article class="msg is-withheld">
+        <div class="who"><span class="tag t-flagged">Withheld</span>
+          <span class="at">${esc(m.channel)} · ${esc(clock(m.at))}</span></div>
+        <div class="bubble">${esc(m.body)}</div></article>`;
+    }
+    return `<article class="msg ${m.mine ? 'is-mine' : ''} ${isOfficial ? 'is-official' : ''}">
+      <div class="who">
+        <span class="name">${esc(m.author_name || 'Anonymous')}</span>
+        ${tags.join('')}
+        <span class="at">${esc(m.channel)} · ${esc(clock(m.at))}</span>
+      </div>
+      ${m.title && m.stream === 'update' ? `<div class="bubble"><strong>${esc(m.title)}</strong><br>${esc(m.body)}</div>`
+        : `<div class="bubble">${esc(m.body)}</div>`}
+    </article>`;
+  }).join('') : '<p class="empty">Nothing said yet.</p>';
+}
+
+/* ── accounts ────────────────────────────────────────────────────────────
+ *
+ * No email, no password: you get a code and the code is the account. Same
+ * possession model as everything else here, and it is what earned trust
+ * attaches to — without it, the board could notice somebody was consistently
+ * useful and have nowhere to send the promotion.
+ */
+
+function renderAccount() {
+  const box = $('#account-box');
+  if (!box) return;
+
+  if (state.session) {
+    const role = state.roles[state.session.role];
+    box.innerHTML = `
+      <p class="hint" style="margin-bottom:6px"><strong>Your account</strong></p>
+      <p class="hint">Posting as <strong>${esc(state.session.holder)}</strong> — ${esc(role.label)}.
+      ${state.session.role !== 'resident'
+        ? 'The board promoted you; your existing code now does more.'
+        : 'Keep contributing usefully and the board may make you a community moderator.'}</p>`;
+    return;
+  }
+
+  box.innerHTML = `
+    <p class="hint" style="margin-bottom:6px"><strong>Want your name on your posts?</strong></p>
+    <p class="hint">Create an account — no email, no password. You get a code that
+      works on any device, and it is what a promotion attaches to.</p>
+    <div class="row">
+      <input id="account-name" maxlength="80" placeholder="Name or nickname" style="flex:1 1 150px">
+      <button class="btn ghost compact" id="account-create" type="button">Create account</button>
+    </div>
+    <p class="error" id="account-error" hidden></p>`;
+
+  $('#account-create').addEventListener('click', async () => {
+    const name = $('#account-name').value.trim();
+    if (name.length < 2) return showError('#account-error', 'Pick a name — a nickname is fine.');
+    try {
+      const result = await api('/api/auth/register', {
+        method: 'POST', body: JSON.stringify({ display_name: name }),
+      });
+      saveToken(result.token);
+      state.session = result.session;
+      saveDisplayName(name);
+      await refreshSession();
+      // Shown once. It is the only way back in from another device.
+      alert(`Your account code is:\n\n${result.code}\n\n` +
+            `Write it down. It signs you in on any device, and it is shown once.`);
+      await refresh(true);
+      renderAccount();
+    } catch (err) { showError('#account-error', err.message); }
+  });
 }

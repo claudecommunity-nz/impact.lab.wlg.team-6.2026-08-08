@@ -344,9 +344,13 @@ def auto_promote(store, cards, *, module_id: str = "team-6-two-way",
     # survive a restart, and re-promoting somebody on every reboot would fill
     # the log with duplicate grants.
     for card in cards.cards():
-        if card.get("issued_by") == "trust-bot" and card.get("subject") \
-                and not card.get("revoked"):
+        if card.get("revoked"):
+            continue
+        if card.get("issued_by") == "trust-bot" and card.get("subject"):
             granted.setdefault(card["subject"], card["role"])
+        # A card promoted in place is keyed on itself, not on a subject.
+        if card.get("promoted_by") == "trust-bot":
+            granted.setdefault(f"card:{card['card_id']}", card["role"])
 
     promoted = []
 
@@ -357,13 +361,21 @@ def auto_promote(store, cards, *, module_id: str = "team-6-two-way",
         if role_rank(granted.get(author, "resident")) >= role_rank(AUTO_PROMOTE_MAX_ROLE):
             continue
 
-        code, card = cards.issue(
-            role=AUTO_PROMOTE_MAX_ROLE,
-            holder=candidate.get("display_name") or author,
-            issued_by="trust-bot",
-            note=f"Auto-granted at score {candidate['score']}/{THRESHOLD}.",
-            subject=author,
-        )
+        note = f"Auto-granted at score {candidate['score']}/{THRESHOLD}."
+        holder = candidate.get("display_name") or author
+
+        # If they have an account, promote the card they already hold. Minting
+        # a new one leaves the code with nowhere to go: a resident is a browser
+        # token, not an address, so the promotion would be created and never
+        # arrive. In place, their existing code simply starts doing more.
+        if author.startswith("card:"):
+            card = cards.promote(author[len("card:"):], AUTO_PROMOTE_MAX_ROLE,
+                                 by="trust-bot", note=note)
+            code = None
+        else:
+            code, card = cards.issue(
+                role=AUTO_PROMOTE_MAX_ROLE, holder=holder,
+                issued_by="trust-bot", note=note, subject=author)
         card_event(store, action="auto-promoted", card_id=card["card_id"],
                    role=AUTO_PROMOTE_MAX_ROLE,
                    holder=card["holder"], actor="trust-bot",
@@ -371,6 +383,7 @@ def auto_promote(store, cards, *, module_id: str = "team-6-two-way",
                    detail={"author_id": author, "score": candidate["score"],
                            "reasons": candidate["reasons"]})
         granted[author] = AUTO_PROMOTE_MAX_ROLE
-        promoted.append({**candidate, "card_id": card["card_id"], "code": code})
+        promoted.append({**candidate, "card_id": card["card_id"], "code": code,
+                         "in_place": code is None})
 
     return promoted

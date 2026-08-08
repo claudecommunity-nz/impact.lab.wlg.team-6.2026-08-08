@@ -38,7 +38,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from core.adaptation import summarise as adaptation_summary
-from core.chat import ChatService, channel_kind, redact_for_public
+from core.chat import (
+    AGENCY_CHANNELS, PUBLIC_CHANNELS, ChatService, channel_kind,
+    redact_for_public,
+)
 from core.community import (
     APPROVED, EVIDENCE_TYPE, FEED_KINDS, FEED_TYPE, PENDING, RESOURCE_KINDS,
     RESOURCE_TYPE, CommunityService,
@@ -200,6 +203,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/banner":
             return self._post_banner(body)
+
+        if path == "/api/auth/register":
+            return self._post_register(body)
 
         if path == "/api/auth/redeem":
             return self._post_redeem(body)
@@ -413,6 +419,54 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/banner":
             return self._send(200, {"banner": self.chat.banner()})
+
+        if path == "/api/comms":
+            # Every public communication in one stream. The board, the
+            # agencies, WCC's updates and the banner are separate surfaces
+            # because they have different rules — but somebody arriving in an
+            # emergency wants one place that answers "what is being said",
+            # not four tabs to check in turn.
+            official = can(self.role(), "moderate.flag")
+            viewer = "official" if official else "public"
+            author = query.get("author_id", [None])[0]
+            session = self.session()
+            if session:
+                author = f"card:{session['card_id']}"
+
+            stream = []
+            for channel in PUBLIC_CHANNELS:
+                for m in self.chat.messages(channel["id"], viewer=viewer,
+                                            author_id=author):
+                    stream.append({**m, "channel": channel["name"],
+                                   "channel_id": channel["id"], "stream": "board"})
+            try:
+                for channel in AGENCY_CHANNELS:
+                    for m in self.chat.messages(channel["id"], viewer=viewer,
+                                                author_id=author):
+                        stream.append({**m, "channel": channel["name"],
+                                       "channel_id": channel["id"],
+                                       "stream": "agency"})
+            except PermissionError:
+                pass
+            for n in self.live.news():
+                stream.append({
+                    "id": n["id"], "body": n["body"], "title": n["title"],
+                    "author_name": n["agency_name"], "author_role": "official",
+                    "agency": n["agency_name"], "at": n["at"],
+                    "channel": n["category_label"], "stream": "update",
+                    "urgent": n["urgent"], "visibility": "public",
+                })
+
+            stream.sort(key=lambda m: str(m.get("at") or ""), reverse=True)
+            return self._send(200, {
+                "banner": self.chat.banner(),
+                "messages": stream[:200],
+                "counts": {
+                    "board": sum(1 for m in stream if m["stream"] == "board"),
+                    "agency": sum(1 for m in stream if m["stream"] == "agency"),
+                    "updates": sum(1 for m in stream if m["stream"] == "update"),
+                },
+            })
 
         if path == "/api/community":
             viewer = "official" if can(self.role(), "moderate.flag") else "public"
@@ -859,6 +913,32 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(201, {"ok": True})
 
     # -- auth --------------------------------------------------------------
+
+    def _post_register(self, body: dict) -> None:
+        """Create an account. No email, no password — the same possession model
+        as everything else here: you get a code, and the code is the account.
+
+        It works on any device, it survives clearing the browser, and it is
+        what earned trust attaches to. Without it, the board could notice
+        somebody was consistently useful and then have nowhere to send the
+        promotion.
+        """
+        name = str(body.get("display_name") or "").strip()[:80]
+        if len(name) < 2:
+            return self._error(400, "pick a name to post under — a nickname is fine")
+
+        code, card = self.cards.issue(
+            role="resident", holder=name, issued_by="self",
+            note="Self-created account.")
+        card_event(self.service.store, action="account-created",
+                   card_id=card["card_id"], role="resident", holder=name,
+                   actor=name, module_id=self.service.module_id)
+        token, _ = self.cards.redeem(code, client=self.client_key())
+        return self._send(201, {
+            "code": code,
+            "token": token,
+            "session": self.cards.resolve(token),
+        })
 
     def _post_redeem(self, body: dict) -> None:
         try:

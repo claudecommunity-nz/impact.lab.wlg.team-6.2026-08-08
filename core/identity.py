@@ -324,6 +324,35 @@ class CardStore:
             self._append(card)
         return card
 
+    def promote(self, card_id: str, role: str, *, by: str = "system",
+                note: str = "") -> dict:
+        """Change an existing card's role IN PLACE.
+
+        This is what makes earned trust actually reach a person. The bot used
+        to mint a NEW card for someone it promoted — and then had nowhere to
+        send the code, because a resident is a browser token, not an address.
+        The card was created and the promotion never arrived.
+
+        Promoting the card they already hold means their existing code keeps
+        working and their role simply changes; there is nothing to deliver.
+        The change is appended to the file like everything else, so the
+        history of what a card could do is still recoverable.
+        """
+        if role not in ROLES:
+            raise ValueError(f"unknown role {role!r}")
+        with self._lock:
+            card = self._by_id.get(card_id)
+            if card is None:
+                raise KeyError(f"no card {card_id!r}")
+            card["previous_role"] = card["role"]
+            card["role"] = role
+            card["promoted_by"] = by
+            card["promoted_at"] = utc_now()
+            if note:
+                card["note"] = note[:200]
+            self._append(card)
+            return card
+
     def revoke(self, card_id: str, *, by: str = "system") -> dict:
         with self._lock:
             card = self._by_id.get(card_id)

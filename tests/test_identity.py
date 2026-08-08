@@ -369,3 +369,102 @@ class TestRateLimits(Base):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestAccounts(Base):
+    """An account is a self-issued card. No email, no password.
+
+    It exists because earned trust had nowhere to go: the bot would notice
+    somebody was useful, mint them a card, and then have no way to hand over
+    the code — a resident is a browser token, not an address.
+    """
+
+    def test_an_account_is_a_resident_card_that_works_anywhere(self):
+        code, card = self.cards.issue(role="resident", holder="Ana",
+                                      issued_by="self")
+        token, _ = self.cards.redeem(code)
+        session = self.cards.resolve(token)
+        self.assertEqual(session["role"], "resident")
+        self.assertEqual(session["holder"], "Ana")
+        # Same code, a second device.
+        other, _ = self.cards.redeem(code)
+        self.assertEqual(self.cards.resolve(other)["holder"], "Ana")
+
+    def test_promotion_happens_in_place_so_the_code_keeps_working(self):
+        code, card = self.cards.issue(role="resident", holder="Ana",
+                                      issued_by="self")
+        self.cards.promote(card["card_id"], "moderator", by="trust-bot")
+
+        token, _ = self.cards.redeem(code)
+        session = self.cards.resolve(token)
+        self.assertEqual(session["role"], "moderator")
+        self.assertIn("moderate.flag", session["permissions"])
+
+    def test_a_live_session_sees_the_promotion_without_signing_in_again(self):
+        code, card = self.cards.issue(role="resident", holder="Ana",
+                                      issued_by="self")
+        token, _ = self.cards.redeem(code)
+        self.assertEqual(self.cards.resolve(token)["role"], "resident")
+
+        self.cards.promote(card["card_id"], "moderator", by="trust-bot")
+        self.assertEqual(self.cards.resolve(token)["role"], "moderator")
+
+    def test_the_previous_role_is_kept(self):
+        code, card = self.cards.issue(role="resident", holder="Ana")
+        promoted = self.cards.promote(card["card_id"], "moderator")
+        self.assertEqual(promoted["previous_role"], "resident")
+        self.assertEqual(promoted["promoted_by"], "system")
+
+    def test_promotion_survives_a_restart(self):
+        code, card = self.cards.issue(role="resident", holder="Ana")
+        self.cards.promote(card["card_id"], "moderator")
+        reopened = CardStore(self.cards.path)
+        token, _ = reopened.redeem(code)
+        self.assertEqual(reopened.resolve(token)["role"], "moderator")
+
+    def test_promoting_to_an_unknown_role_is_refused(self):
+        code, card = self.cards.issue(role="resident", holder="Ana")
+        with self.assertRaises(ValueError):
+            self.cards.promote(card["card_id"], "mayor")
+
+    def test_the_bot_promotes_an_account_in_place_rather_than_minting(self):
+        code, card = self.cards.issue(role="resident", holder="Ana",
+                                      issued_by="self")
+        author = f"card:{card['card_id']}"
+        for channel in ("wellington", "karori", "newtown"):
+            self.chat.post(channel_id=channel, author_id=author,
+                           author_name="Ana", author_role="resident",
+                           body="A properly substantive message about local "
+                                "conditions, well over eighty characters so it counts.")
+        for _ in range(2):
+            report = self.reports.submit_report(
+                title="Real thing", description="Detail.", issue_type="flooding",
+                lat=-41.24, lng=174.81, author_id=author)
+            self.reports.set_status(report["id"], "reviewing")
+
+        promoted = auto_promote(self.store, self.cards)
+        self.assertEqual(len(promoted), 1)
+        # No orphan code, because there is nobody to hand one to.
+        self.assertIsNone(promoted[0]["code"])
+        self.assertTrue(promoted[0]["in_place"])
+
+        token, _ = self.cards.redeem(code)
+        self.assertEqual(self.cards.resolve(token)["role"], AUTO_PROMOTE_MAX_ROLE)
+
+    def test_in_place_promotion_is_still_idempotent(self):
+        code, card = self.cards.issue(role="resident", holder="Ana",
+                                      issued_by="self")
+        author = f"card:{card['card_id']}"
+        for channel in ("wellington", "karori", "newtown"):
+            self.chat.post(channel_id=channel, author_id=author,
+                           author_name="Ana", author_role="resident",
+                           body="A properly substantive message about local "
+                                "conditions, well over eighty characters so it counts.")
+        for _ in range(2):
+            report = self.reports.submit_report(
+                title="Real thing", description="Detail.", issue_type="flooding",
+                lat=-41.24, lng=174.81, author_id=author)
+            self.reports.set_status(report["id"], "reviewing")
+
+        self.assertEqual(len(auto_promote(self.store, self.cards)), 1)
+        self.assertEqual(len(auto_promote(self.store, self.cards)), 0)
