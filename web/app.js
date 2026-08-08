@@ -327,7 +327,14 @@ let opsMap = null;
 
 function showView(name) {
   state.view = name;
-  $$('.tab').forEach(t => t.classList.toggle('is-active', t.dataset.view === name));
+  $$('.tab').forEach(t => {
+    const on = t.dataset.view === name;
+    t.classList.toggle('is-active', on);
+    // Without this a screen reader announces ten tabs and cannot say which
+    // one you are on.
+    t.setAttribute('aria-selected', String(on));
+    t.tabIndex = on ? 0 : -1;
+  });
   $$('.view').forEach(v => v.classList.toggle('is-active', v.id === `view-${name}`));
   if (name === 'mine') renderMine();
   if (name === 'ops') renderOps();
@@ -693,6 +700,45 @@ async function refresh(force = false) {
 
 // ── boot ─────────────────────────────────────────────────────────────────
 
+/**
+ * Give every control a name a screen reader can read.
+ *
+ * The audit found 22 inputs whose only description was a placeholder — and a
+ * placeholder disappears the moment somebody types, so it was never a label.
+ * Done in one place rather than by hand across the markup, so a control added
+ * later is covered too.
+ */
+function labelEveryControl() {
+  document.querySelectorAll('input, textarea, select').forEach(el => {
+    if (el.type === 'hidden') return;
+    const labelled = (el.id && document.querySelector(`label[for="${el.id}"]`))
+      || el.closest('label') || el.getAttribute('aria-label')
+      || el.getAttribute('aria-labelledby');
+    if (labelled) return;
+    const name = el.placeholder || el.name || el.id;
+    if (name) el.setAttribute('aria-label', name);
+  });
+}
+
+/** Arrow keys move between tabs, which is what a tablist is expected to do. */
+function wireTabKeys() {
+  const tabs = $$('.tab');
+  tabs.forEach(tab => {
+    tab.addEventListener('keydown', event => {
+      const i = tabs.indexOf(tab);
+      let next = null;
+      if (event.key === 'ArrowRight') next = tabs[(i + 1) % tabs.length];
+      if (event.key === 'ArrowLeft') next = tabs[(i - 1 + tabs.length) % tabs.length];
+      if (event.key === 'Home') next = tabs[0];
+      if (event.key === 'End') next = tabs[tabs.length - 1];
+      if (!next) return;
+      event.preventDefault();
+      next.focus();
+      showView(next.dataset.view);
+    });
+  });
+}
+
 async function boot() {
   loadMine();
   ensureIdentity();
@@ -703,6 +749,10 @@ async function boot() {
   $$('.tab').forEach(tab => {
     tab.addEventListener('click', () => showView(tab.dataset.view));
   });
+  // Set the initial ARIA state. Doing it only on click left the landing tab
+  // with no aria-selected at all, so a screen reader announced ten tabs and
+  // could not say which one you were on.
+  showView(state.view);
 
   state.meta = await api('/api/meta');
   initReportForm();
@@ -744,11 +794,14 @@ async function boot() {
     $('#attrib').textContent = 'Basemap unavailable — run tools/fetch_basemap.py.';
   }
 
+  wireTabKeys();
   await renderRealtime();
   await renderLive();
   renderAdaptation();
   await refresh(true);
-  setInterval(refresh, 3000);
+  labelEveryControl();
+  // Re-run after each render, since most of this markup is built at runtime.
+  setInterval(() => { refresh(); labelEveryControl(); }, 3000);
 }
 
 boot().catch(err => {
@@ -2090,7 +2143,7 @@ function renderLiveFeed(data) {
         ${r.at ? `<span class="at">${esc(ago(r.at))}</span>` : ''}
         ${r.item.place_name ? `<span class="at">· ${esc(r.item.place_name)}</span>` : ''}
       </div>
-      <h4>${esc(r.title || '')}</h4>
+      <h3>${esc(r.title || '')}</h3>
       ${r.item && r.item.severity ? `<div style="margin:-2px 0 5px">${trafficLight(r.item.severity)}</div>` : ''}
       ${r.body ? `<p class="body">${esc(r.body)}</p>` : ''}
       ${r.kind === 'request' || r.kind === 'issue' ? answerHtml(r.item, data) : ''}

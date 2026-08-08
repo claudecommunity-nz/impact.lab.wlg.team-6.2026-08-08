@@ -879,7 +879,7 @@ h3, h4 { letter-spacing: -.008em; }
 }
 
 .liverow .kind { font-size: .61rem; }
-.liverow h4 { font-size: .94rem; font-weight: 650; }
+.liverow h3 { font-size: .94rem; font-weight: 650; margin: 3px 0; }
 
 /* ── surfaces ───────────────────────────────────────────── */
 
@@ -1017,3 +1017,41 @@ h3, h4 { letter-spacing: -.008em; }
   .tab { padding: 8px 11px; font-size: .8rem; }
   .tab.g-ops:first-of-type { margin-left: 6px; }
 }
+
+
+/* ═══ ACCESSIBILITY PASS ════════════════════════════════════
+   Measured, not assumed. An audit against the rendered page found muted
+   text at 3.76:1 and inactive tabs at 2.56:1 where AA needs 4.5:1 — the
+   grey that looked "quiet and tasteful" was unreadable for anyone with
+   even mild low vision, which in an emergency is the wrong tradeoff to
+   have made without noticing. */
+
+:root { --ink-3: #59697f; }          /* was #7285a0 — 3.76:1, now 5.1:1 */
+@media (prefers-color-scheme: dark) {
+  :root { --ink-3: #9fb2c6; }        /* lifted for the same reason */
+}
+.tab:not(.is-active) { color: var(--ink-2); }   /* was ink-3 at 2.56:1 */
+.tab.g-ops:not(.is-active) { color: var(--ink-2); opacity: .82; }
+.attrib, .hint { color: var(--ink-3); }
+
+/* Visible focus everywhere, including inside the folder tabs. */
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 1; }
+
+/* Screen-reader-only text: real labels for controls that only had a
+   placeholder. A placeholder disappears the moment somebody types, so it
+   was never a label. */
+.sronly {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ═══ LAYOUT ════════════════════════════════════════════════
+   The forms row used a 1fr/1fr grid under a 1fr/400px map row, so the
+   columns did not line up and the page read as two unrelated layouts
+   stacked. Same rhythm throughout, and more of the screen used on a
+   large display. */
+
+main { max-width: 1560px; }
+.split.live-forms { grid-template-columns: minmax(0, 1fr) minmax(0, 400px); }
+.split.live-forms > * { align-self: start; }
+@media (max-width: 900px) { .split.live-forms { grid-template-columns: 1fr; } }

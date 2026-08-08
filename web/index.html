@@ -22,16 +22,16 @@
     </div>
   </div>
   <nav class="tabs" role="tablist" aria-label="Sections">
-    <button class="tab g-view is-active" data-view="live" role="tab">Live map</button>
-    <button class="tab g-mine" data-view="report" role="tab">Report</button>
-    <button class="tab g-mine" data-view="mine" role="tab">My reports <span class="pill" id="mine-count" hidden></span></button>
-    <button class="tab g-comm" data-view="news" role="tab">Updates</button>
-    <button class="tab g-comm" data-view="board" role="tab">Board</button>
-    <button class="tab g-comm" data-view="community" role="tab">Community</button>
-    <button class="tab g-help" data-view="help" role="tab">Help</button>
-    <button class="tab g-ops" data-view="ops" role="tab">Queue</button>
-    <button class="tab g-ops" data-view="wall" role="tab">Comms hub</button>
-    <button class="tab g-ops" data-view="cards" role="tab">Cards</button>
+    <button class="tab g-view is-active" data-view="live" role="tab" id="tab-live" aria-controls="view-live">Live map</button>
+    <button class="tab g-mine" data-view="report" role="tab" id="tab-report" aria-controls="view-report">Report</button>
+    <button class="tab g-mine" data-view="mine" role="tab" id="tab-mine" aria-controls="view-mine">My reports <span class="pill" id="mine-count" hidden></span></button>
+    <button class="tab g-comm" data-view="news" role="tab" id="tab-news" aria-controls="view-news">Updates</button>
+    <button class="tab g-comm" data-view="board" role="tab" id="tab-board" aria-controls="view-board">Board</button>
+    <button class="tab g-comm" data-view="community" role="tab" id="tab-community" aria-controls="view-community">Community</button>
+    <button class="tab g-help" data-view="help" role="tab" id="tab-help" aria-controls="view-help">Help</button>
+    <button class="tab g-ops" data-view="ops" role="tab" id="tab-ops" aria-controls="view-ops">Queue</button>
+    <button class="tab g-ops" data-view="wall" role="tab" id="tab-wall" aria-controls="view-wall">Comms hub</button>
+    <button class="tab g-ops" data-view="cards" role="tab" id="tab-cards" aria-controls="view-cards">Cards</button>
   </nav>
   <div class="whoarea">
     <span class="rolebadge" id="role-badge" hidden></span>
@@ -74,7 +74,7 @@
 
 <!-- Important comms banner. Officials publish one line; it appears at the top
      of every surface at once. Hidden until there is one. -->
-<div class="commsbanner" id="comms-banner" role="alert" hidden>
+<div class="commsbanner" id="comms-banner" role="alert" aria-live="assertive" hidden>
   <span class="cb-tag" id="cb-tag"></span>
   <span class="cb-text" id="cb-text"></span>
   <span class="cb-meta" id="cb-meta"></span>
@@ -102,10 +102,10 @@
   <button class="btn ghost compact" id="near-clear" hidden>Show everywhere</button>
 </div>
 
-<main>
+<main id="main">
 
   <!-- ── Live map: one page, everything happening ───────────── -->
-  <section class="view is-active" id="view-live">
+  <section class="view is-active" id="view-live" role="tabpanel" tabindex="0" aria-labelledby="tab-live">
     <div class="split live">
       <div class="mapwrap card">
         <div class="maphead">
@@ -125,7 +125,7 @@
       <div class="card scroller">
         <h2>Happening now</h2>
         <p class="hint" id="live-scope">Newest first, across the whole city.</p>
-        <div id="live-feed" class="stack"></div>
+        <div id="live-feed" class="stack" aria-live="polite" aria-relevant="additions"></div>
       </div>
     </div>
 
@@ -179,7 +179,7 @@
   </section>
 
   <!-- ── Report ─────────────────────────────────────────────── -->
-  <section class="view" id="view-report">
+  <section class="view" id="view-report" role="tabpanel" tabindex="0" aria-labelledby="tab-report">
     <div class="split">
       <form id="report-form" class="card" autocomplete="off">
         <h1>What's happening?</h1>
@@ -262,7 +262,7 @@
   </section>
 
   <!-- ── My reports ─────────────────────────────────────────── -->
-  <section class="view" id="view-mine">
+  <section class="view" id="view-mine" role="tabpanel" tabindex="0" aria-labelledby="tab-mine">
     <div class="card">
       <h1>My reports</h1>
       <p class="hint">
@@ -277,11 +277,11 @@
       </form>
       <p class="error" id="lookup-error" hidden></p>
     </div>
-    <div id="mine-list" class="stack"></div>
+    <div id="mine-list" class="stack" aria-live="polite"></div>
   </section>
 
   <!-- ── News: periodic updates, tagged by agency ───────────── -->
-  <section class="view" id="view-news">
+  <section class="view" id="view-news" role="tabpanel" tabindex="0" aria-labelledby="tab-news">
     <div class="card">
       <h1>Updates</h1>
       <p class="hint">
@@ -314,7 +314,7 @@
   </section>
 
   <!-- ── Help, guidelines and rules ─────────────────────────── -->
-  <section class="view" id="view-help">
+  <section class="view" id="view-help" role="tabpanel" tabindex="0" aria-labelledby="tab-help">
     <div class="split help">
       <nav class="card helpnav">
         <h2>On this page</h2>
@@ -509,7 +509,7 @@
   </section>
 
   <!-- ── Message board (public) ─────────────────────────────── -->
-  <section class="view" id="view-board">
+  <section class="view" id="view-board" role="tabpanel" tabindex="0" aria-labelledby="tab-board">
     <div class="split boards">
       <div class="card">
         <h1>Message board</h1>
@@ -549,7 +549,7 @@
   </section>
 
   <!-- ── Agency wall (officials) ────────────────────────────── -->
-  <section class="view" id="view-wall">
+  <section class="view" id="view-wall" role="tabpanel" tabindex="0" aria-labelledby="tab-wall">
     <div id="wall-locked" class="card locked">
       <h1>Communications hub</h1>
       <p class="hint">
@@ -602,7 +602,7 @@
   </section>
 
   <!-- ── Community map ──────────────────────────────────────── -->
-  <section class="view" id="view-community">
+  <section class="view" id="view-community" role="tabpanel" tabindex="0" aria-labelledby="tab-community">
     <div class="split wide">
       <div class="mapwrap card">
         <div class="maphead">
@@ -676,7 +676,7 @@
   </section>
 
   <!-- ── Cards & trust (card holders only) ──────────────────── -->
-  <section class="view" id="view-cards">
+  <section class="view" id="view-cards" role="tabpanel" tabindex="0" aria-labelledby="tab-cards">
     <div id="cards-locked" class="card">
       <h1>Cards &amp; trust</h1>
       <p class="hint">
@@ -739,7 +739,7 @@
   </section>
 
   <!-- ── WCC ops ────────────────────────────────────────────── -->
-  <section class="view" id="view-ops">
+  <section class="view" id="view-ops" role="tabpanel" tabindex="0" aria-labelledby="tab-ops">
     <div id="ops-locked" class="card locked">
       <h1>WCC view</h1>
       <p class="hint">
