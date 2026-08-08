@@ -28,6 +28,9 @@ const state = {
   boardChannel: 'wellington',
   channels: { public: [], agency: [] },
   banner: null,
+  near: null,        // {lat,lng,radius,label} — this browser only, never sent
+  community: null,
+  queue: null,
   token: null,       // session token from a redeemed card
   session: null,     // {role, holder, permissions} — decided by the server
   roles: {},
@@ -303,6 +306,7 @@ function showView(name) {
   if (name === 'board') { renderBoardChannels(); renderBoard(); }
   if (name === 'wall') renderWall();
   if (name === 'cards') renderCardsView();
+  if (name === 'community') renderCommunity().then(fillCommunityChips);
 }
 
 // ── report form ──────────────────────────────────────────────────────────
@@ -513,11 +517,15 @@ function groupLabel(groupId, reports) {
 }
 
 function renderOps() {
-  const reports = state.reports.slice().reverse();
+  const all = state.reports.slice().reverse();
+  const reports = all.filter(withinNear);
+  const hidden = all.length - reports.length;
   $('#ops-counter').textContent =
-    `${reports.length} report${reports.length === 1 ? '' : 's'}`;
+    `${reports.length} report${reports.length === 1 ? '' : 's'}` +
+    (hidden ? ` · ${hidden} outside ${state.near.radius} km` : '');
 
   if (opsMap) {
+    drawNearRing(opsMap);
     opsMap.drawPins(reports, {
       onClick: report => {
         state.openOps = report.id;
@@ -613,6 +621,7 @@ async function refresh(force = false) {
     if (state.view === 'board') { renderBoardChannels(); renderBoard(); }
     if (state.view === 'wall') renderWall();
     if (state.view === 'cards') renderCardsView();
+    if (state.view === 'community') renderCommunity();
   } catch (_) {
     // Offline or the server restarted. Keep the last good render on screen
     // and try again on the next tick rather than blanking the page.
@@ -625,6 +634,7 @@ async function boot() {
   loadMine();
   ensureIdentity();
   loadToken();
+  loadNear();
   updateMineCount();
 
   $$('.tab').forEach(tab => {
@@ -636,9 +646,12 @@ async function boot() {
   initLookup();
   initBoard();
   initWall();
+  initNear();
+  initCommunity();
   initAuth();
   initCards();
   await refreshSession();
+  await signInFromUrl();
   await loadChannels();
   await refreshBanner();
 
@@ -659,6 +672,8 @@ async function boot() {
     state.basemap = await api('/api/basemap');
     reportMap.drawBasemap(state.basemap);
     opsMap.drawBasemap(state.basemap);
+    fillPlaceSuggestions();
+    drawNearRing(reportMap);
     $('#attrib').textContent = state.basemap.attribution || '';
   } catch (_) {
     $('#attrib').textContent = 'Basemap unavailable — run tools/fetch_basemap.py.';
@@ -1049,6 +1064,7 @@ function initAuth() {
   $('#signin-btn').addEventListener('click', () => {
     $('#card-code').value = '';
     $('#signin-error').hidden = true;
+    loadDemoCards();
     dialog.showModal();
     $('#card-code').focus();
   });
@@ -1235,4 +1251,529 @@ async function renderCardsView() {
 
   await renderCards();
   await renderTrust();
+}
+
+/* ── one-tap demo cards ──────────────────────────────────────────────────
+ *
+ * The codes are published in the repo, so there is nothing to protect by
+ * making people transcribe them. Signing in to look around should cost one
+ * tap, not a trip to the README and sixteen characters typed by hand.
+ */
+
+async function loadDemoCards() {
+  let cards = [];
+  try { cards = (await api('/api/auth/demo-cards')).cards; } catch (_) { return; }
+
+  const wrap = $('#demo-cards');
+  if (!cards.length) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+
+  const list = $('#demo-card-list');
+  list.textContent = '';
+  for (const card of cards) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'chip';
+    btn.textContent = `${card.label} — ${card.holder}`;
+    btn.title = card.note || '';
+    btn.addEventListener('click', () => signInWith(card.code));
+    list.appendChild(btn);
+  }
+}
+
+async function signInWith(code) {
+  try {
+    const result = await api('/api/auth/redeem', {
+      method: 'POST', body: JSON.stringify({ code }),
+    });
+    saveToken(result.token);
+    state.session = result.session;
+    const dialog = $('#signin-dialog');
+    if (dialog.open) dialog.close();
+    await refreshSession();
+    await refresh(true);
+    return true;
+  } catch (err) {
+    const el = $('#signin-error');
+    el.textContent = err.message;
+    el.hidden = false;
+    return false;
+  }
+}
+
+/** Deep link: /?card=WCC-XXXX-XXXX-XXXX signs in and cleans the URL.
+ *  Lets a card be shared as a link, or a QR code printed on the card itself. */
+async function signInFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('card');
+  if (!code) return;
+  await signInWith(code);
+  // Drop the code from the address bar so it doesn't end up in a screenshot,
+  // a bookmark, or the browser history of a shared laptop.
+  params.delete('card');
+  const rest = params.toString();
+  window.history.replaceState({}, '', window.location.pathname + (rest ? '?' + rest : ''));
+}
+
+/* ── "what's happening near me" ──────────────────────────────────────────
+ *
+ * Your location is used in this browser and nowhere else. Filtering happens
+ * client-side against data the page already holds, and the address lookup runs
+ * against a gazetteer baked into basemap.json — 2,800 Wellington streets and
+ * suburbs shipped with the app.
+ *
+ * That is the point, not an optimisation. Typing your address into a
+ * geocoding service to find out what is happening on your street means
+ * telling that service where you live. Doing it locally means nobody learns
+ * anything, and it still works with no connectivity.
+ */
+
+const NEAR_KEY = 'wcc-two-way/near';
+const RADII = [1, 5, 10, 20];
+
+function loadNear() {
+  try { state.near = JSON.parse(localStorage.getItem(NEAR_KEY) || 'null'); }
+  catch (_) { state.near = null; }
+  if (state.near && !RADII.includes(state.near.radius)) state.near.radius = 5;
+}
+
+function saveNear(near) {
+  state.near = near;
+  try {
+    if (near) localStorage.setItem(NEAR_KEY, JSON.stringify(near));
+    else localStorage.removeItem(NEAR_KEY);
+  } catch (_) {}
+  renderNear();
+  if (state.view === 'ops') renderOps();
+  if (state.view === 'report' && reportMap) drawNearRing(reportMap);
+}
+
+/** Metres between two points. Same formula as the server's grouping, so the
+ *  radius a resident sees matches the radius a duty officer sees. */
+function haversineM(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180;
+  const dp = (lat2 - lat1) * Math.PI / 180, dl = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function withinNear(item) {
+  if (!state.near) return true;
+  if (item.lat == null || item.lng == null) return true;  // unplaced: never hide
+  return haversineM(state.near.lat, state.near.lng, item.lat, item.lng)
+         <= state.near.radius * 1000;
+}
+
+function renderNear() {
+  const label = $('#near-state');
+  const near = state.near;
+  label.textContent = near ? `${near.label} · within ${near.radius} km` : 'Whole city';
+  label.classList.toggle('is-set', !!near);
+  $('#near-clear').hidden = !near;
+
+  $$('#near-radius .chip').forEach(chip => {
+    chip.setAttribute('aria-pressed',
+      String(!!near && Number(chip.dataset.km) === near.radius));
+  });
+}
+
+// The council publishes streets abbreviated — "Aro St", "Hutt Rd". People
+// type either form, and someone looking for their own street should not have
+// to guess which one the data used. Both sides are folded to one canonical
+// short form before matching.
+const STREET_TYPES = {
+  street: 'st', st: 'st', road: 'rd', rd: 'rd', avenue: 'ave', ave: 'ave',
+  av: 'ave', drive: 'dr', dr: 'dr', terrace: 'tce', tce: 'tce', ter: 'tce',
+  crescent: 'cres', cres: 'cres', place: 'pl', pl: 'pl', lane: 'ln', ln: 'ln',
+  close: 'cl', cl: 'cl', court: 'ct', ct: 'ct', parade: 'pde', pde: 'pde',
+  grove: 'gr', gr: 'gr', way: 'way', quay: 'quay', qy: 'quay',
+  boulevard: 'blvd', blvd: 'blvd', esplanade: 'esp', esp: 'esp',
+  highway: 'hwy', hwy: 'hwy', walk: 'walk', rise: 'rise', view: 'view',
+};
+
+function canonicalPlace(text) {
+  const words = String(text || '')
+    .toLowerCase()
+    .replace(/[.,]/g, ' ')
+    // Drop a leading street number: "42 Aro Street" is Aro Street.
+    .replace(/^\s*\d+[a-z]?[\s,/-]+/, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(w => STREET_TYPES[w] || w);
+  return words.join(' ');
+}
+
+/** Fuzzy-match a typed place against the baked gazetteer. */
+function findPlace(query) {
+  const places = (state.basemap && state.basemap.places) || [];
+  const q = canonicalPlace(query);
+  if (!q || !places.length) return null;
+
+  if (!state._placeIndex) {
+    state._placeIndex = places.map(p => ({ p, key: canonicalPlace(p.n) }));
+  }
+  const index = state._placeIndex;
+
+  const exact = index.find(e => e.key === q);
+  if (exact) return exact.p;
+  const starts = index.find(e => e.key.startsWith(q));
+  if (starts) return starts.p;
+  const contains = index.find(e => e.key.includes(q));
+  return contains ? contains.p : null;
+}
+
+function initNear() {
+  const wrap = $('#near-radius');
+  wrap.textContent = '';
+  for (const km of RADII) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip';
+    chip.dataset.km = km;
+    chip.textContent = `${km} km`;
+    chip.addEventListener('click', () => {
+      if (!state.near) return showError('#report-error',
+        'Set where you are first — "Near me", or type a street.');
+      saveNear({ ...state.near, radius: km });
+    });
+    wrap.appendChild(chip);
+  }
+
+  $('#near-locate').addEventListener('click', () => {
+    if (!navigator.geolocation) return;
+    const btn = $('#near-locate');
+    btn.disabled = true; btn.textContent = 'Locating…';
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        saveNear({
+          lat: pos.coords.latitude, lng: pos.coords.longitude,
+          radius: (state.near && state.near.radius) || 5, label: 'Where you are',
+        });
+        btn.disabled = false; btn.textContent = 'Near me';
+      },
+      () => {
+        btn.disabled = false; btn.textContent = 'Near me';
+        $('#near-address').focus();
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 });
+  });
+
+  $('#near-form').addEventListener('submit', event => {
+    event.preventDefault();
+    const place = findPlace($('#near-address').value);
+    if (!place) {
+      $('#near-state').textContent = 'No street or suburb by that name';
+      return;
+    }
+    saveNear({
+      lat: place.y, lng: place.x,
+      radius: (state.near && state.near.radius) || 5,
+      label: place.s ? `${place.n}, ${place.s}` : place.n,
+    });
+    $('#near-address').value = '';
+  });
+
+  $('#near-clear').addEventListener('click', () => saveNear(null));
+  renderNear();
+}
+
+/** Populate the datalist once the gazetteer is loaded. */
+function fillPlaceSuggestions() {
+  const places = (state.basemap && state.basemap.places) || [];
+  const list = $('#near-places');
+  list.textContent = '';
+  // A datalist of 2,800 entries is fine in the DOM but pointless to render in
+  // full; suburbs first, they are what people actually type.
+  for (const place of places.filter(p => !p.s).slice(0, 120)) {
+    const option = document.createElement('option');
+    option.value = place.n;
+    list.appendChild(option);
+  }
+}
+
+/** Draw the radius on a map so "within 5 km" is a thing you can see. */
+function drawNearRing(map) {
+  const layer = map.layers.pick;
+  if (!state.near) { layer.textContent = ''; return; }
+  layer.textContent = '';
+
+  const cx = map.x(state.near.lng), cy = map.y(state.near.lat);
+  // Convert km to viewBox units along longitude, correcting for latitude.
+  const degrees = state.near.radius / (111.32 * Math.cos(state.near.lat * Math.PI / 180));
+  const r = Math.abs(map.x(state.near.lng + degrees) - cx);
+
+  const ring = document.createElementNS(SVG_NS, 'circle');
+  ring.setAttribute('cx', cx.toFixed(1));
+  ring.setAttribute('cy', cy.toFixed(1));
+  ring.setAttribute('r', r.toFixed(1));
+  ring.setAttribute('class', 'near-ring');
+  const dot = document.createElementNS(SVG_NS, 'circle');
+  dot.setAttribute('cx', cx.toFixed(1));
+  dot.setAttribute('cy', cy.toFixed(1));
+  dot.setAttribute('r', '4');
+  dot.setAttribute('class', 'near-dot');
+  layer.append(ring, dot);
+}
+
+/* ── community map ───────────────────────────────────────────────────────
+ *
+ * Photos, offers of help, and live feeds. Everything from an unverified
+ * resident waits for a moderator; card holders skip the queue because a human
+ * already vouched for them.
+ *
+ * Stacks, not clusters: five photos of one flooded road are five witnesses,
+ * and the count is the most useful number on the screen.
+ */
+
+let communityMap = null;
+
+async function loadCommunity() {
+  const params = new URLSearchParams({ author_id: state.authorId });
+  state.community = await api('/api/community?' + params);
+  if (state.session && state.session.permissions.includes('moderate.flag')) {
+    try { state.queue = (await api('/api/community/queue')).queue; } catch (_) { state.queue = []; }
+  } else {
+    state.queue = null;
+  }
+}
+
+async function renderCommunity() {
+  try { await loadCommunity(); } catch (_) { return; }
+  const c = state.community || {};
+
+  if (!communityMap) {
+    communityMap = new Map($('#map-community'), state.meta.extent);
+    if (state.basemap) communityMap.drawBasemap(state.basemap);
+    communityMap.svg.addEventListener('click', event => {
+      const point = communityMap.latlng(event.clientX, event.clientY);
+      if (point) {
+        state.draft.communityPoint = point;
+        $('#exif-readout').hidden = false;
+        $('#exif-readout').className = 'exifreadout';
+        $('#exif-readout').textContent =
+          `Pin set by hand: ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`;
+      }
+    });
+  }
+  drawNearRing(communityMap);
+  drawCommunityPins(c);
+
+  const stacks = (c.stacks || []).filter(withinNear);
+  $('#community-counter').textContent =
+    `${stacks.length} location${stacks.length === 1 ? '' : 's'} · ` +
+    `${(c.resources || []).length} offers · ${(c.feeds || []).length} feeds`;
+
+  renderStacks(stacks);
+  renderQueue();
+}
+
+function drawCommunityPins(c) {
+  const layer = communityMap.layers.pins;
+  layer.textContent = '';
+
+  const add = (item, cls, radius, label) => {
+    if (item.lat == null || item.lng == null) return;
+    const el = document.createElementNS(SVG_NS, 'circle');
+    el.setAttribute('cx', communityMap.x(item.lng).toFixed(1));
+    el.setAttribute('cy', communityMap.y(item.lat).toFixed(1));
+    el.setAttribute('r', String(radius));
+    el.setAttribute('class', cls + (withinNear(item) ? '' : ' is-far'));
+    const t = document.createElementNS(SVG_NS, 'title');
+    t.textContent = label;
+    el.appendChild(t);
+    layer.appendChild(el);
+  };
+
+  // Stacks first and largest — the radius grows with corroboration, so a
+  // street five people have photographed is visibly louder than one.
+  for (const stack of (c.stacks || [])) {
+    add(stack, 'stackpin', Math.min(6 + stack.pieces * 3, 22),
+        `${stack.title} — ${stack.pieces} piece(s) of evidence from ${stack.witnesses} source(s)`);
+  }
+  for (const r of (c.resources || [])) {
+    add(r, 'res', 5, `${r.title}${r.state !== 'approved' ? ' (awaiting a moderator)' : ''}`);
+  }
+  for (const f of (c.feeds || [])) {
+    add(f, 'feedpin', 5, `${f.title} — live feed`);
+  }
+}
+
+function renderStacks(stacks) {
+  const list = $('#stack-list');
+  if (!stacks.length) {
+    list.innerHTML = '<p class="empty">Nothing on the map yet in this area.</p>';
+    return;
+  }
+  list.innerHTML = stacks.map(s => `
+    <article class="stackcard ${s.pieces > 2 ? 'is-strong' : ''}">
+      <div class="head">
+        <span class="strength">${s.pieces} piece${s.pieces === 1 ? '' : 's'} of evidence</span>
+        <strong>${esc(s.title || 'Unnamed location')}</strong>
+        <span class="at">${s.reports} report${s.reports === 1 ? '' : 's'} ·
+          ${s.photos} photo${s.photos === 1 ? '' : 's'} ·
+          ${s.witnesses} source${s.witnesses === 1 ? '' : 's'}</span>
+      </div>
+      ${s.images && s.images.length ? `<div class="thumbs">${s.images
+        .map(u => `<img src="${esc(u)}" alt="Photo" title="Submitted by a resident" loading="lazy">`)
+        .join('')}</div>` : ''}
+    </article>`).join('');
+}
+
+function renderQueue() {
+  const wrap = $('#mod-queue-wrap');
+  if (!state.queue) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  $('#queue-count').textContent = state.queue.length;
+
+  const list = $('#mod-queue');
+  if (!state.queue.length) {
+    list.innerHTML = '<p class="empty">Nothing waiting.</p>';
+    return;
+  }
+  list.innerHTML = state.queue.map(i => `
+    <div class="modrow">
+      <div class="head">
+        <strong>${esc(i.title || '(untitled)')}</strong>
+        <span class="at">${esc(i.author_name)} · ${esc(clock(i.at))}</span>
+      </div>
+      ${i.detail ? `<p class="body">${esc(i.detail)}</p>` : ''}
+      ${i.media_urls && i.media_urls.length
+        ? `<img src="${esc(i.media_urls[0])}" alt="Photo" title="Awaiting review">` : ''}
+      ${i.url ? `<p class="code">${esc(i.url)}</p>` : ''}
+      ${i.contact ? `<p class="at">Contact: ${esc(i.contact)}</p>` : ''}
+      ${i.located_by ? `<p class="at">Located by ${esc(i.located_by)}</p>` : ''}
+      <div class="row">
+        <button class="btn tiny" data-approve="${esc(i.id)}">Approve</button>
+        <button class="btn tiny ghost" data-reject="${esc(i.id)}">Decline</button>
+      </div>
+    </div>`).join('');
+
+  $$('[data-approve]').forEach(b => b.addEventListener('click',
+    () => decide(b.dataset.approve, 'approved', b)));
+  $$('[data-reject]').forEach(b => b.addEventListener('click',
+    () => decide(b.dataset.reject, 'rejected', b)));
+}
+
+async function decide(itemId, newState, btn) {
+  btn.disabled = true;
+  try {
+    await api('/api/community/moderate', {
+      method: 'POST',
+      body: JSON.stringify({ item_id: itemId, state: newState }),
+    });
+    await renderCommunity();
+  } catch (err) { alert(err.message); btn.disabled = false; }
+}
+
+function initCommunity() {
+  const kinds = () => (state.community && state.community.resource_kinds) || {};
+  state.draft.resourceKind = 'water';
+  state.draft.resourceVisibility = 'public';
+  state.draft.feedKind = 'camera';
+
+  // Reading the file locally first means the uploader is told what the photo
+  // gives away BEFORE it is sent anywhere.
+  $('#evidence-file').addEventListener('change', () => {
+    const readout = $('#exif-readout');
+    readout.hidden = false;
+    readout.className = 'exifreadout none';
+    readout.textContent = 'Reading the photo…';
+  });
+
+  $('#evidence-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const file = $('#evidence-file').files[0];
+    if (!file) return showError('#evidence-error', 'Choose a photo first.');
+
+    const form = new FormData();
+    form.append('image', file);
+    form.append('caption', $('#evidence-caption').value.trim());
+    form.append('author_id', state.authorId);
+    form.append('author_name', state.displayName || 'Anonymous');
+    if (state.draft.communityPoint) {
+      form.append('lat', state.draft.communityPoint.lat);
+      form.append('lng', state.draft.communityPoint.lng);
+    }
+
+    try {
+      const res = await fetch('/api/community/evidence', {
+        method: 'POST',
+        headers: state.token ? { Authorization: `Bearer ${state.token}` } : {},
+        body: form,   // no Content-Type: the browser sets the boundary
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'upload failed');
+
+      const readout = $('#exif-readout');
+      readout.hidden = false;
+      readout.className = 'exifreadout' + (result.found_location ? '' : ' none');
+      readout.textContent = result.found_location
+        ? `The photo knew where it was: ${result.lat.toFixed(4)}, ${result.lng.toFixed(4)} — pin placed for you. `
+          + (result.metadata_stripped ? 'Its metadata has been removed from the published copy.' : '')
+        : 'No location in this photo — tap the map to place it. '
+          + (result.metadata_stripped ? 'Its metadata has been removed anyway.' : '');
+
+      $('#evidence-form').reset();
+      state.draft.communityPoint = null;
+      await renderCommunity();
+    } catch (err) {
+      showError('#evidence-error', err.message);
+    }
+  });
+
+  $('#resource-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const detail = $('#resource-detail').value.trim();
+    if (!detail) return showError('#resource-error', 'Say what you can offer.');
+    const point = state.draft.communityPoint || state.near;
+    try {
+      await api('/api/community/resource', {
+        method: 'POST',
+        body: JSON.stringify({
+          kind: state.draft.resourceKind, detail,
+          place_name: $('#resource-place').value.trim(),
+          contact: $('#resource-contact').value.trim(),
+          visibility: state.draft.resourceVisibility,
+          author_id: state.authorId,
+          author_name: state.displayName || 'Anonymous',
+          lat: point ? point.lat : null, lng: point ? point.lng : null,
+        }),
+      });
+      $('#resource-form').reset();
+      await renderCommunity();
+    } catch (err) { showError('#resource-error', err.message); }
+  });
+
+  $('#feed-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const url = $('#feed-url').value.trim();
+    if (!url) return showError('#feed-error', 'Paste the link.');
+    const point = state.draft.communityPoint || state.near;
+    try {
+      await api('/api/community/feed', {
+        method: 'POST',
+        body: JSON.stringify({
+          url, kind: state.draft.feedKind,
+          label: $('#feed-label').value.trim(),
+          author_id: state.authorId,
+          author_name: state.displayName || 'Anonymous',
+          lat: point ? point.lat : null, lng: point ? point.lng : null,
+        }),
+      });
+      $('#feed-form').reset();
+      await renderCommunity();
+    } catch (err) { showError('#feed-error', err.message); }
+  });
+}
+
+function fillCommunityChips() {
+  const c = state.community || {};
+  chipGroup($('#resource-kinds'), Object.keys(c.resource_kinds || {}),
+            'resourceKind', c.resource_kinds || {});
+  chipGroup($('#feed-kinds'), Object.keys(c.feed_kinds || {}),
+            'feedKind', c.feed_kinds || {});
+  chipGroup($('#resource-visibility'), ['public', 'officials'], 'resourceVisibility', {
+    public: 'Anyone can see this', officials: 'Only officials (address, contact)',
+  });
 }

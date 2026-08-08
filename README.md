@@ -254,7 +254,7 @@ wifi does. `tools/fetch_basemap.py` bakes the geometry to
 ### Tests
 
 ```bash
-python3 -m unittest discover tests -v      # 88 tests, ~2.4s
+python3 -m unittest discover tests -v      # 108 tests, ~2.6s
 ```
 
 Standard library `unittest`, no pytest. They cover the things that would break
@@ -362,3 +362,5 @@ field names and limits.
 ## Licence
 
 Code here is MIT unless stated otherwise. The data is not covered by it.
+
+> Working demo access cards for the live instance are published in [DEMO_CARDS.md](DEMO_CARDS.md).
