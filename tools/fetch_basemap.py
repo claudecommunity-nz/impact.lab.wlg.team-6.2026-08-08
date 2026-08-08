@@ -177,6 +177,92 @@ def hub_layer() -> list[dict]:
     return features
 
 
+# OpenStreetMap, via Overpass. Baked like everything else rather than fetched
+# at runtime: a tile server is the same single point of failure as a CDN font,
+# and this has to work on a dead network.
+#
+# Weighted by class so the map reads as a map — motorways heavy, residential
+# hairline. Without that hierarchy 6,500 streets is a grey smear.
+OVERPASS = "https://overpass-api.de/api/interpreter"
+ROAD_CLASSES = {
+    "motorway": 3, "trunk": 3, "primary": 2,
+    "secondary": 2, "tertiary": 1, "residential": 0, "unclassified": 0,
+}
+# Coarser simplification for the streets you would never trace by eye, finer
+# for the ones people navigate by.
+ROAD_TOLERANCE = {3: 0.00004, 2: 0.00006, 1: 0.00010, 0: 0.00016}
+
+
+def _simplify_line(points, tolerance):
+    """Douglas-Peucker on an open line. Iterative — a long road can be deep."""
+    if len(points) < 3:
+        return points
+    keep = [False] * len(points)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(points) - 1)]
+    while stack:
+        start, end = stack.pop()
+        if end <= start + 1:
+            continue
+        ax, ay = points[start]
+        bx, by = points[end]
+        dx, dy = bx - ax, by - ay
+        span = dx * dx + dy * dy
+        worst, worst_i = -1.0, start
+        for i in range(start + 1, end):
+            px, py = points[i]
+            if span == 0:
+                dist = (px - ax) ** 2 + (py - ay) ** 2
+            else:
+                cross = abs(dy * px - dx * py + bx * ay - by * ax)
+                dist = (cross * cross) / span
+            if dist > worst:
+                worst, worst_i = dist, i
+        if worst > tolerance * tolerance:
+            keep[worst_i] = True
+            stack.append((start, worst_i))
+            stack.append((worst_i, end))
+    return [pt for pt, k in zip(points, keep) if k]
+
+
+def streets() -> list[dict]:
+    """Wellington's street network from OpenStreetMap, simplified and weighted."""
+    import urllib.parse, urllib.request
+
+    print("  openstreetmap streets ...", end=" ", flush=True)
+    started = time.time()
+    w, s, e, n = wcc_gis.WELLINGTON
+    classes = "|".join(ROAD_CLASSES)
+    query = (f'[out:json][timeout:90];(way["highway"~"^({classes})$"]'
+             f'({s},{w},{n},{e}););out geom;')
+    try:
+        raw = urllib.request.urlopen(urllib.request.Request(
+            OVERPASS, data=urllib.parse.urlencode({"data": query}).encode(),
+            headers={"User-Agent": "impact-lab-team6/1.0 (Wellington emergency prototype)"}),
+            timeout=150).read()
+        payload = json.loads(raw)
+    except Exception as exc:
+        print(f"unavailable ({type(exc).__name__}) — map falls back to hazard layers only")
+        return []
+
+    out, kept_points, raw_points = [], 0, 0
+    for way in payload.get("elements", []):
+        geom = way.get("geometry") or []
+        if len(geom) < 2:
+            continue
+        weight = ROAD_CLASSES.get((way.get("tags") or {}).get("highway"), 0)
+        line = [(pt["lon"], pt["lat"]) for pt in geom]
+        raw_points += len(line)
+        line = _simplify_line(line, ROAD_TOLERANCE[weight])
+        kept_points += len(line)
+        out.append({"w": weight,
+                    "p": [[round(x, 5), round(y, 5)] for x, y in line]})
+
+    print(f"{len(out)} streets, {kept_points} of {raw_points} points kept "
+          f"in {time.time() - started:.1f}s")
+    return out
+
+
 def gazetteer() -> list[dict]:
     """Street and suburb names with a point, for offline address lookup.
 
@@ -229,10 +315,12 @@ def main() -> int:
     features = zone_layer() + hub_layer()
 
     places = gazetteer()
+    roads = streets()
 
     payload = {
         "type": "FeatureCollection",
         "places": places,
+        "streets": roads,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "attribution": (
             "Tsunami evacuation zones and Community Emergency Hubs: "

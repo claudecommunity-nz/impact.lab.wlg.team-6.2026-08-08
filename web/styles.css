@@ -1098,3 +1098,43 @@ main { max-width: 1560px; }
 .mapinfo .meta { font-size: .76rem; color: var(--ink-3); margin-bottom: 5px; }
 .mapinfo .close { float: right; }
 .pin, .stackpin, .reqpin, .issuepin, .res, .feedpin, .realpin { cursor: pointer; }
+
+/* ═══ THE MAP, PROPERLY ══════════════════════════════════════
+   Streets from OpenStreetMap, baked offline like everything else. The look
+   borrows from operational maps rather than consumer ones — USGS's quake
+   viewer, MetService warnings, Civil Defence hazard maps all do the same
+   thing: a quiet, legible base network, hazard washed over it, and the
+   markers you must not miss burning bright on top.
+
+   Weight is the hierarchy. Four stroke widths across 6,527 streets is the
+   difference between a recognisable city and a grey smear. */
+
+.street{fill:none;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.street.s0{stroke:#aebdca;stroke-width:.6}           /* residential */
+.street.s1{stroke:#9cafbe;stroke-width:.9}            /* tertiary */
+.street.s2{stroke:#8399ab;stroke-width:1.3}           /* secondary, primary */
+.street.s3{stroke:#6d8598;stroke-width:1.9}           /* motorway, trunk */
+
+@media (prefers-color-scheme: dark){
+  .street.s0{stroke:#22303a} .street.s1{stroke:#293945}
+  .street.s2{stroke:#33475466} .street.s2{stroke:#334754}
+  .street.s3{stroke:#3f5665}
+}
+
+/* Land and sea, so the coastline reads without drawing a coastline. */
+.map{background:#e6edf1}
+@media (prefers-color-scheme: dark){ .map{background:#0d161c} }
+
+/* Hazard zones wash over the streets instead of hiding them. */
+.zone-red{fill-opacity:.20} .zone-orange{fill-opacity:.17} .zone-yellow{fill-opacity:.15}
+
+/* Markers gain a soft halo so they hold up over a busy network — the one
+   thing on this map you must not miss is a person asking for help. */
+.reqpin,.issuepin,.stackpin,.res,.feedpin,.realpin,.pin{
+  filter:drop-shadow(0 0 2px rgba(255,255,255,.85))}
+@media (prefers-color-scheme: dark){
+  .reqpin,.issuepin,.stackpin,.res,.feedpin,.realpin,.pin{
+    filter:drop-shadow(0 0 3px rgba(0,0,0,.9))}
+}
+.reqpin.is-urgent{filter:drop-shadow(0 0 4px rgba(200,50,44,.9))}
+.hub{fill-opacity:.45}
