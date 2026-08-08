@@ -110,7 +110,8 @@ class Handler(BaseHTTPRequestHandler):
         # no cookies anywhere in this app.
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        self.wfile.write(body)
+        if not getattr(self, "_head_only", False):
+            self.wfile.write(body)
 
     def _error(self, status: int, message: str) -> None:
         self._send(status, {"error": message})
@@ -170,6 +171,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
+
+    def do_HEAD(self) -> None:  # noqa: N802
+        """Same as GET without the body.
+
+        Not implementing it meant BaseHTTPRequestHandler answered 501, and a
+        video player probing a file before streaming it saw an error rather
+        than its size and type. Cheap to support and some clients insist.
+        """
+        self._head_only = True
+        try:
+            self.do_GET()
+        finally:
+            self._head_only = False
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -1087,7 +1101,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
         self.send_header("Cache-Control", "public, max-age=3600")
         self.end_headers()
-        self.wfile.write(data)
+        if not getattr(self, "_head_only", False):
+            self.wfile.write(data)
 
     def _serve_file(self, target: Path, fallback: dict | None = None) -> None:
         if not target.is_file():
