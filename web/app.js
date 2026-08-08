@@ -34,6 +34,7 @@ const state = {
   live: null,
   layers: {},
   news: null,
+  realtime: null,
   token: null,       // session token from a redeemed card
   session: null,     // {role, holder, permissions} — decided by the server
   roles: {},
@@ -334,7 +335,7 @@ function showView(name) {
   if (name === 'wall') renderWall();
   if (name === 'cards') renderCardsView();
   if (name === 'community') renderCommunity().then(fillCommunityChips);
-  if (name === 'live') { renderLive(); renderAdaptation(); }
+  if (name === 'live') { renderRealtime().then(renderLive); renderAdaptation(); }
   if (name === 'news') renderNews();
   if (name === 'help') fillHelpLinks();
 }
@@ -510,6 +511,7 @@ async function renderMine() {
           <span class="badge b-${esc(status)}">${esc(view.status_label)}</span>
           <span class="code">${esc(r.id)}</span>
           <span>${esc(ago(r.created_at))}</span>
+          ${r.severity ? trafficLight(r.severity) : ''}
         </div>
         <h3>${esc(r.title)}</h3>
         ${r.description ? `<p class="body">${esc(r.description)}</p>` : ''}
@@ -614,13 +616,14 @@ function renderOps() {
           ${related ? `<span class="grouptag">${esc(related)}</span>` : ''}
           <span class="code">${esc(r.id)}</span>
           <span>${esc(ago(r.created_at))}</span>
+          ${r.severity ? trafficLight(r.severity) : ''}
         </div>
         <h3>${esc(r.title)}</h3>
         <div class="meta">
           <span>${esc(titleCase(r.issue_type))}</span>
           ${r.place_name ? `<span>· ${esc(r.place_name)}</span>` : ''}
           <span>· ${esc(titleCase((r.raw && r.raw.reporter_kind) || 'resident'))}</span>
-          <span>· severity ${esc(r.severity)}</span>
+          <span>· ${trafficLight(r.severity)}</span>
         </div>
         ${r.description ? `<p class="body">${esc(r.description)}</p>` : ''}
         <div class="taps">
@@ -741,6 +744,7 @@ async function boot() {
     $('#attrib').textContent = 'Basemap unavailable — run tools/fetch_basemap.py.';
   }
 
+  await renderRealtime();
   await renderLive();
   renderAdaptation();
   await refresh(true);
@@ -1874,6 +1878,7 @@ const LAYERS = [
   { key: 'stacks',    label: 'Reports & photos', colour: 'var(--accent)' },
   { key: 'resources', label: 'Offers of help', colour: 'var(--resolved)' },
   { key: 'feeds',     label: 'Live feeds',   colour: '#7a4bd0' },
+  { key: 'real',      label: 'Real data now', colour: '#127a4b' },
 ];
 
 function initLive() {
@@ -1978,6 +1983,7 @@ async function renderLive() {
   $('#issue-form').hidden = !data.official_view;
 
   drawLivePins(data);
+  drawRealtimePins(liveMap);
   renderLiveFeed(data);
 }
 
@@ -2051,9 +2057,12 @@ function renderLiveFeed(data) {
                 label: 'Live feed', title: f.title, body: f.url || '' });
   }
 
+  rows.push(...realtimeRows());
+
   const visible = rows
-    .filter(r => state.layers[({ issue: 'issues', request: 'requests', report: 'stacks',
-                                resource: 'resources', feed: 'feeds' })[r.kind]])
+    .filter(r => r.kind === 'real'
+                 || state.layers[({ issue: 'issues', request: 'requests', report: 'stacks',
+                                    resource: 'resources', feed: 'feeds' })[r.kind]])
     .filter(r => withinNear(r.item))
     .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
 
@@ -2070,13 +2079,14 @@ function renderLiveFeed(data) {
   }
 
   feed.innerHTML = visible.map(r => `
-    <article class="liverow k-${esc(r.kind)}">
+    <article class="liverow k-${esc(r.kind)} ${r.stale ? 'stale' : ''}">
       <div class="head">
         <span class="kind">${esc(r.label)}</span>
         ${r.at ? `<span class="at">${esc(ago(r.at))}</span>` : ''}
         ${r.item.place_name ? `<span class="at">· ${esc(r.item.place_name)}</span>` : ''}
       </div>
       <h4>${esc(r.title || '')}</h4>
+      ${r.item && r.item.severity ? `<div style="margin:-2px 0 5px">${trafficLight(r.item.severity)}</div>` : ''}
       ${r.body ? `<p class="body">${esc(r.body)}</p>` : ''}
       ${r.kind === 'request' || r.kind === 'issue' ? answerHtml(r.item, data) : ''}
     </article>`).join('');
@@ -2278,4 +2288,109 @@ function fillHelpLinks() {
     li.appendChild(code);
     list.appendChild(li);
   }
+}
+
+/* ── real data, fetched now ──────────────────────────────────────────────
+ *
+ * Everything else on this map is invented for the demo. This is not, and the
+ * interface says so rather than letting a viewer assume either way.
+ *
+ * Freshness travels with every reading. Most Hilltop sites in this extent are
+ * groundwater bores whose "latest" value is from 2012 or 1994, so a gauge is
+ * marked stale rather than shown as current — putting a 1994 rainfall figure
+ * on a live map is exactly the failure this product exists to prevent.
+ */
+
+async function renderRealtime() {
+  let data;
+  try { data = await api('/api/realtime'); } catch (_) { return; }
+  state.realtime = data;
+
+  const note = $('#real-note');
+  const c = data.counts || {};
+  note.hidden = false;
+  note.textContent =
+    `Live right now: ${c.roads} NZTA road event${c.roads === 1 ? '' : 's'} and ` +
+    `${c.gauges_fresh} reporting river gauge${c.gauges_fresh === 1 ? '' : 's'}` +
+    (c.gauges_stale
+      ? `, plus ${c.gauges_stale} gauge${c.gauges_stale === 1 ? ' that has' : 's that have'} stopped reporting`
+      : '') +
+    `. Fetched ${data.cached_seconds}s ago. Everything else on this map is demo data.`;
+}
+
+function realtimeRows() {
+  const data = state.realtime;
+  if (!data || !state.layers.real) return [];
+  const rows = [];
+
+  for (const r of data.roads || []) {
+    rows.push({
+      kind: 'real', at: null, item: r,
+      label: `NZTA · ${r.event_type || 'road event'}`,
+      title: r.title,
+      body: [r.detail, r.updated ? `Updated ${r.updated}` : ''].filter(Boolean).join(' — '),
+    });
+  }
+  for (const g of data.gauges || []) {
+    rows.push({
+      kind: 'real', at: null, item: g, stale: !g.fresh,
+      label: g.fresh ? 'Greater Wellington · live gauge' : 'Gauge · not reporting',
+      title: g.title,
+      body: g.fresh
+        ? `${g.measurement} ${g.value} · read ${g.age_hours}h ago`
+        : `Last reading ${String(g.at || '').slice(0, 10)} — treated as stale, not shown as current`,
+    });
+  }
+  return rows;
+}
+
+function drawRealtimePins(map) {
+  const data = state.realtime;
+  if (!data || !state.layers.real) return;
+  const layer = map.layers.pins;
+
+  const add = (item, cls, label) => {
+    if (item.lat == null || item.lng == null) return;
+    const el = document.createElementNS(SVG_NS, 'circle');
+    el.setAttribute('cx', map.x(item.lng).toFixed(1));
+    el.setAttribute('cy', map.y(item.lat).toFixed(1));
+    el.setAttribute('r', '5.5');
+    el.setAttribute('class', cls + (withinNear(item) ? '' : ' is-far'));
+    const t = document.createElementNS(SVG_NS, 'title');
+    t.textContent = label;
+    el.appendChild(t);
+    layer.appendChild(el);
+  };
+
+  for (const r of data.roads || []) add(r, 'realpin is-road', `NZTA: ${r.title}`);
+  for (const g of (data.gauges || []).filter(x => x.fresh)) {
+    add(g, 'realpin', `${g.title} — ${g.measurement} ${g.value}, ${g.age_hours}h ago`);
+  }
+}
+
+/* ── traffic-light severity ──────────────────────────────────────────────
+ *
+ * From the team's workflow board. Rendered as a three-lamp signal rather than
+ * a coloured chip: red, orange and yellow already mean tsunami evacuation
+ * zone on this map, and a second colour language over the top of the first
+ * is ambiguity in the one place it costs most. Which LAMP is lit carries the
+ * meaning as well as the colour, so it survives being read quickly, in bad
+ * light, or by someone who cannot separate the hues.
+ */
+
+const SEVERITY_LIGHT = {
+  extreme:  { cls: 't-extreme',  label: 'Extreme' },
+  severe:   { cls: 't-severe',   label: 'Serious' },
+  moderate: { cls: 't-moderate', label: 'Moderate' },
+  minor:    { cls: 't-minor',    label: 'Minor' },
+  unknown:  { cls: 't-unknown',  label: 'Not rated' },
+};
+
+function trafficLight(severity, { withLabel = true } = {}) {
+  const s = SEVERITY_LIGHT[severity] || SEVERITY_LIGHT.unknown;
+  const lamps = '<i></i><i></i><i></i>';
+  return `<span class="tlwrap" title="Severity: ${esc(s.label)}">
+    <span class="tl ${s.cls}" role="img" aria-label="Severity ${esc(s.label)}">${lamps}</span>
+    ${withLabel ? `<span class="lbl">${esc(s.label)}</span>` : ''}
+  </span>`;
 }

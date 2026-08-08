@@ -320,6 +320,7 @@ class LiveOpsService:
                 "title": signal.get("title"),
                 "detail": signal.get("description", ""),
                 "need": raw.get("need"), "urgency": raw.get("urgency"),
+                "severity": signal.get("severity"),
                 "urgency_label": URGENCY.get(raw.get("urgency"), ""),
                 "people": raw.get("people"),
                 "author_name": raw.get("author_name"),

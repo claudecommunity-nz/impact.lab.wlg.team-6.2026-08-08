@@ -32,17 +32,43 @@ FOLLOWUP_TYPE = "report-followup"
 # tap a button, they do not compose a sentence. Kept clear of track4's
 # action/verify/awareness triage words — different scope, own words (see
 # reference/report-status-design.md).
+# Each of these is an OBSERVABLE FACT with a time attached, not an estimate.
+#
+# "Responding" used to cover both of the middle two, and it was doing too much
+# work: a crew driving across town and a crew already on site with a shovel
+# are wildly different if you are the person waiting, and collapsing them is
+# exactly where a status stops answering the question people actually have.
+# Splitting them came off the team's workflow board — "timestamp left to
+# location / timestamp working on fix / timestamp fixed".
 RECEIVED = "received"
 REVIEWING = "reviewing"
-RESPONDING = "responding"
+ENROUTE = "enroute"
+ONSITE = "onsite"
 RESOLVED = "resolved"
-STATUSES = (RECEIVED, REVIEWING, RESPONDING, RESOLVED)
+STATUSES = (RECEIVED, REVIEWING, ENROUTE, ONSITE, RESOLVED)
+
+# Kept so older callers and stored signals still resolve. Anything that says
+# "responding" means a crew had left, which is the earlier of the two.
+RESPONDING = ENROUTE
 
 STATUS_LABELS = {
     RECEIVED: "Received",
     REVIEWING: "Being checked",
-    RESPONDING: "Crew responding",
-    RESOLVED: "Resolved",
+    ENROUTE: "On the way",
+    ONSITE: "Crew on site",
+    RESOLVED: "Fixed",
+    # A status stored before the split still renders rather than showing raw.
+    "responding": "On the way",
+}
+
+# What each one means in the reporter's words, shown under the status so the
+# vocabulary never has to be guessed at.
+STATUS_MEANINGS = {
+    RECEIVED: "Your report reached WCC.",
+    REVIEWING: "Someone is checking it against what else is happening.",
+    ENROUTE: "A crew has left for the location.",
+    ONSITE: "A crew is there and working on it.",
+    RESOLVED: "The job is finished.",
 }
 
 # What a reporter can say AFTER their first report.
@@ -187,6 +213,8 @@ class ReportService:
         """The one tap. Publishes a NEW status signal chained to the original
         report; never edits the report itself.
         """
+        if status == "responding":          # pre-split alias
+            status = ENROUTE
         if status not in STATUSES:
             raise ValueError(f"status must be one of {STATUSES}, got {status!r}")
         if self.store.get(reference) is None:

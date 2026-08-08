@@ -895,3 +895,52 @@ h3, h4 { letter-spacing: -.008em; }
   border-color: #c8322c !important;
   background: color-mix(in srgb, #c8322c 6%, var(--card));
 }
+
+
+/* ── real data ───────────────────────────────────────────── */
+
+.realnote {
+  margin: 0 0 8px; padding: 7px 10px; border-radius: 7px; font-size: .76rem;
+  background: color-mix(in srgb, #127a4b 9%, var(--card));
+  border: 1px solid color-mix(in srgb, #127a4b 32%, transparent);
+  color: var(--ink-2);
+}
+.liverow.k-real { border-left-color: #127a4b; }
+#live-feed .k-real::before { border-color: #127a4b; }
+.liverow.k-real .kind { color: #127a4b; }
+.stale { opacity: .6; }
+.stale .kind { color: var(--ink-3); }
+.realpin { fill: #127a4b; stroke: var(--card); stroke-width: 1.6; }
+.realpin.is-road { fill: #c07004; }
+
+/* ── traffic-light severity ─────────────────────────────────
+   Off the team's workflow board: "Severity — Traffic Lights".
+
+   Built as a SHAPE, not a colour swap. Red, orange and yellow already mean
+   tsunami evacuation zone on this map, so a coloured square would be
+   ambiguous exactly where ambiguity is expensive. A three-lamp signal with
+   one lit is unmistakable at a glance and cannot be confused with a zone
+   fill, and it still reads for anyone who cannot separate the hues, because
+   WHICH lamp is lit carries the meaning as well as its colour. */
+
+.tl {
+  display: inline-flex; flex-direction: column; gap: 1.5px;
+  padding: 2.5px; border-radius: 3px; vertical-align: middle;
+  background: color-mix(in srgb, var(--ink) 78%, transparent);
+  flex: none;
+}
+.tl i {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: color-mix(in srgb, #ffffff 16%, transparent);
+}
+.tl.t-extreme i:nth-child(1),
+.tl.t-severe  i:nth-child(1) { background: #ff4d43; box-shadow: 0 0 4px #ff4d43; }
+.tl.t-moderate i:nth-child(2) { background: #ffb020; box-shadow: 0 0 4px #ffb020; }
+.tl.t-minor    i:nth-child(3) { background: #3ddc84; box-shadow: 0 0 4px #3ddc84; }
+/* extreme pulses; nothing else moves, so movement means one thing only */
+.tl.t-extreme i:nth-child(1) { animation: tlpulse 1.4s ease-in-out infinite; }
+@keyframes tlpulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .tl.t-extreme i:nth-child(1) { animation: none; } }
+
+.tlwrap { display: inline-flex; align-items: center; gap: 5px; font-size: .74rem; }
+.tlwrap .lbl { color: var(--ink-2); font-weight: 600; }

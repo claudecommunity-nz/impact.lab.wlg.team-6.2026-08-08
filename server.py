@@ -32,6 +32,7 @@ import json
 import mimetypes
 import posixpath
 import re
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -46,6 +47,7 @@ from core.liveops import (
     ISSUE_STATES, ISSUE_TYPE, LIKELIHOOD, NEED_KINDS, NEWS_AGENCIES,
     NEWS_CATEGORIES, REQUEST_TYPE, TIMEFRAME, URGENCY, LiveOpsService,
 )
+from core.livedata import snapshot as live_snapshot
 from core.media import read_location
 from core.uploads import BadImage, TooLarge, parse_multipart, resolve, store_image
 from core.identity import CardStore, ROLES, can, can_issue, card_event
@@ -54,7 +56,9 @@ from core.moderation import (
     challenge, score_author,
 )
 from core.hazard import lookup_async, summary
-from core.reports import ISSUE_TYPES, STATUS_LABELS, STATUSES, ReportService
+from core.reports import (
+    ISSUE_TYPES, STATUS_LABELS, STATUS_MEANINGS, STATUSES, ReportService,
+)
 from core.signals import SEVERITIES
 from core.store import SignalStore, StoreFull
 
@@ -361,6 +365,7 @@ class Handler(BaseHTTPRequestHandler):
                 "issue_types": list(ISSUE_TYPES),
                 "statuses": list(STATUSES),
                 "status_labels": STATUS_LABELS,
+                "status_meanings": STATUS_MEANINGS,
                 "severities": sorted(SEVERITIES),
                 "extent": WELLINGTON,
             })
@@ -464,6 +469,9 @@ class Handler(BaseHTTPRequestHandler):
                 "categories": NEWS_CATEGORIES,
                 "can_post": can(self.role(), "banner.publish"),
             })
+
+        if path == "/api/realtime":
+            return self._send(200, live_snapshot())
 
         if path == "/api/adaptation":
             return self._send(200, adaptation_summary(svc.store, svc.module_id))
@@ -1018,6 +1026,21 @@ def serve(host: str = "127.0.0.1", port: int = 8080,
     print(f"  Signal log:               {store.path}  ({store.count()} signals)")
     print(f"  Shared map reads:         http://{host}:{port}/api/geojson")
     print(f"  Auth cards:               {cards.path}  ({len(cards.cards())} cards)")
+
+    # Warm the slow caches in the background so the first visitor after a
+    # restart does not pay for them. Both hit other agencies' servers and take
+    # tens of seconds cold; on a demo that is a layer silently not appearing.
+    # Daemon threads: a pending warm must never hold the process open.
+    def _warm() -> None:
+        for name, fn in (("live data", live_snapshot),
+                         ("hazard context", lambda: adaptation_summary(store, service.module_id))):
+            try:
+                fn()
+                print(f"  warmed: {name}")
+            except Exception as exc:
+                print(f"  warm failed ({name}): {type(exc).__name__}")
+
+    threading.Thread(target=_warm, daemon=True).start()
     print("\n  Ctrl-C to stop.\n")
     try:
         httpd.serve_forever()

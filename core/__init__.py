@@ -6,6 +6,8 @@ from .reports import (
     RECEIVED,
     REPORT_TYPE,
     RESOLVED,
+    ENROUTE,
+    ONSITE,
     RESPONDING,
     REVIEWING,
     STATUS_LABELS,
@@ -18,7 +20,7 @@ from .store import SignalStore, new_reference
 
 __all__ = [
     "ISSUE_TYPES", "MODULE_ID", "RECEIVED", "REPORT_TYPE", "RESOLVED",
-    "RESPONDING", "REVIEWING", "STATUSES", "STATUS_LABELS", "STATUS_TYPE",
+    "ENROUTE", "ONSITE", "RESPONDING", "REVIEWING", "STATUSES", "STATUS_LABELS", "STATUS_TYPE",
     "ReportService", "SEVERITIES", "SOURCE_TYPES", "SignalStore",
     "make_signal", "new_reference", "utc_now",
 ]

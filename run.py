@@ -86,14 +86,15 @@ def seed(store_path: str | None) -> None:
     # rather than every pin sitting at "received".
     first = service.reports()[0]["id"]
     service.set_status(first, "reviewing", note="Duty officer checking against the flood layer.")
-    service.set_status(first, "responding", note="Contractor dispatched to close the lane.")
+    service.set_status(first, "enroute", note="Contractor left the depot, about 25 minutes away.")
+    service.set_status(first, "onsite", note="Crew on site, coning off the southbound lane.")
 
     # Advance a few more so the trust score has real corroboration to find:
     # these reporters had something an official chose to act on.
     for report in service.reports()[1:5]:
         service.set_status(report["id"], "reviewing",
                            note="Checked against the hazard layer.")
-    print(f"\n  {first} advanced to 'responding' so the timeline has something in it.")
+    print(f"\n  {first} advanced to 'crew on site' so the timeline has something in it.")
 
     seed_chat(store)
 

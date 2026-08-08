@@ -22,8 +22,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.reports import (  # noqa: E402
-    RECEIVED, REPORT_TYPE, RESOLVED, RESPONDING, REVIEWING, STATUS_TYPE,
-    ReportService, haversine_m,
+    ENROUTE, ONSITE, RECEIVED, REPORT_TYPE, RESOLVED, RESPONDING, REVIEWING,
+    STATUS_LABELS, STATUS_MEANINGS, STATUS_TYPE, STATUSES, ReportService,
+    haversine_m,
 )
 from core.signals import make_signal  # noqa: E402
 from core.store import SignalStore, new_reference  # noqa: E402
@@ -72,7 +73,7 @@ class TestTheLoop(Base):
         self.assertEqual([t["status"] for t in view["timeline"]],
                          [RECEIVED, REVIEWING, RESPONDING, RESOLVED])
         self.assertEqual(view["status"], RESOLVED)
-        self.assertEqual(view["status_label"], "Resolved")
+        self.assertEqual(view["status_label"], "Fixed")
         self.assertEqual(view["timeline"][-1]["note"], "Lane reopened.")
 
     def test_unknown_reference_is_not_found_rather_than_empty(self):
@@ -224,3 +225,47 @@ class TestComposability(Base):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestResponseStages(Base):
+    """Each stage is an observable fact with a time, not an estimate.
+
+    "Responding" used to mean both "a crew has left" and "a crew is on site",
+    which are wildly different if you are the one waiting. Split after the
+    team's workflow board named them separately.
+    """
+
+    def test_the_full_journey_is_five_observable_stages(self):
+        ref = self.submit()["id"]
+        for status in (REVIEWING, ENROUTE, ONSITE, RESOLVED):
+            self.svc.set_status(ref, status)
+        view = self.svc.report_view(ref)
+        self.assertEqual([t["status"] for t in view["timeline"]],
+                         [RECEIVED, REVIEWING, ENROUTE, ONSITE, RESOLVED])
+
+    def test_on_the_way_and_on_site_are_different_states(self):
+        ref = self.submit()["id"]
+        self.svc.set_status(ref, ENROUTE, note="Left the depot.")
+        self.assertEqual(self.svc.latest_status(ref), ENROUTE)
+        self.svc.set_status(ref, ONSITE, note="Arrived.")
+        self.assertEqual(self.svc.latest_status(ref), ONSITE)
+        self.assertEqual(len(self.svc.timeline(ref)), 3)
+
+    def test_every_stage_has_a_label_and_a_plain_meaning(self):
+        for status in STATUSES:
+            self.assertTrue(STATUS_LABELS.get(status))
+            self.assertTrue(STATUS_MEANINGS.get(status))
+
+    def test_the_pre_split_status_still_resolves(self):
+        # Signals written before the split say "responding". They must keep
+        # rendering rather than showing a raw token to a resident.
+        ref = self.submit()["id"]
+        self.svc.set_status(ref, "responding")
+        self.assertEqual(self.svc.latest_status(ref), ENROUTE)
+        self.assertEqual(STATUS_LABELS["responding"], "On the way")
+        self.assertEqual(RESPONDING, ENROUTE)
+
+    def test_an_invented_status_is_still_refused(self):
+        ref = self.submit()["id"]
+        with self.assertRaises(ValueError):
+            self.svc.set_status(ref, "on-its-way-ish")

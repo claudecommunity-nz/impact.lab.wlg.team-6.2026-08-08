@@ -274,7 +274,8 @@ def score_author(store, author_id: str, module_id: str = "team-6-two-way") -> di
     actioned = {
         (s.get("raw") or {}).get("original_signal_id")
         for s in store.fetch(limit=0, signal_type=STATUS_TYPE, module_id=module_id)
-        if (s.get("raw") or {}).get("status") in ("reviewing", "responding", "resolved")
+        # Anything past "received" means a human chose to act on it.
+        if (s.get("raw") or {}).get("status") not in (None, "received")
         and (s.get("raw") or {}).get("original_signal_id") in their_reports
     }
     points = min(len(actioned) * WEIGHTS["reports_actioned"], WEIGHTS["reports_actioned_cap"])
