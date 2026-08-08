@@ -1,56 +1,38 @@
-# Impact Lab Wellington — Team 6
+# Community &harr; WCC — a two-way reporting channel
 
-**Wellington City Council Emergency Management × Claude Code Community NZ**
-Saturday 8 August 2026 · Waimanga Room, Wellington City Council
+**Impact Lab Wellington · Team 6 · Problem 02**
+Wellington City Council Emergency Management × Claude Code Community NZ
 
----
-
-## Problem 02 — Create a two-way information channel between communities and WCC
-
-> How might communities provide WCC with timely, structured information about local conditions, impacts and needs — before and during an emergency — and see that their information has been received?
-
-The current flow is inconsistent and largely one-way. WCC sends information out, while reports from communities arrive through several unrelated channels and may not reach the people who can use them.
-
-A prototype could allow residents, community groups or Community Emergency Hubs to report an issue using a simple form or message. Reports could include location, time, issue type, description and an image. WCC could group similar reports, acknowledge receipt and show whether an issue is being checked or acted on.
-
-**Desired outcome:** WCC gains better local awareness, while communities have a clearer and more dependable route into Council.
-
-*The common theme is improving the flow and use of information between communities and Council before and during an event.*
-
----
-
-## What we're building
-
-One working prototype, demoed in four minutes at 16:30.
-
-Each team's module is meant to slot into a shared **common operating picture** —
-a live map of emergency signals that the ten prototypes feed together. Aim for
-something that can be pointed at a map, a feed or an API, rather than a
-closed-off demo.
-
-Two teams work each problem statement independently. That's deliberate: two
-honest attempts at the same problem tell WCC more than one.
-
-## The prototype
+A working prototype of the thing Problem 02 asks for: a route for communities
+to report local conditions to Wellington City Council, and — the part that
+usually goes missing — a way to **see that the report was received and what is
+happening to it**.
 
 ![Walkthrough](walkthrough.gif)
 
-**[▶ Watch the 2-minute walkthrough (MP4)](walkthrough.mp4)** — captioned, no sound.
-Narration script in **[VOICEOVER.md](VOICEOVER.md)**.
+**[▶ Watch the walkthrough (MP4, 2m35s, with narration)](walkthrough.mp4)**
+— recorded against the live site. Script in **[VOICEOVER.md](VOICEOVER.md)**.
+The GIF above is silent; the MP4 has the voiceover.
 
-Live: **https://impact-lab.bitn.cloud** · Demo cards: **[DEMO_CARDS.md](DEMO_CARDS.md)**
+---
 
 ## Run it
 
 ```bash
+git clone https://github.com/jasonagnewnz/wcc-two-way-channel
+cd wcc-two-way-channel
 python3 run.py --seed
 ```
 
-Then open <http://127.0.0.1:8080>. **No `pip install`, no build step, no API
-key, no database.** Python 3.9+ and the standard library, so it runs on any
-laptop in the room.
+Open <http://127.0.0.1:8080>.
 
-Live: **https://impact-lab.bitn.cloud**
+That is the whole setup. **No `pip install`, no build step, no API key, no
+database.** Python 3.9+ and the standard library. Every dependency is a chance
+for one person's laptop to be the one where it does not work, and today there
+is no time for that.
+
+`--seed` puts six plausible Wellington reports on the map so there is something
+to look at. Leave it off for an empty slate.
 
 ### The Live map
 
@@ -86,82 +68,102 @@ Updates chain to the request rather than replacing its status, so the whole
 sequence of answers survives, including the ones that turned out to be wrong.
 That is the part an after-action review actually needs.
 
-### The loop, in three clicks
+### See the loop in thirty seconds
 
-1. **Report an issue** — pick a type, write a line, tap the map, send. You get
-   a reference code like `WLG-K7M2Q`. No account, no login.
-2. **WCC view** — the report is on the map. Tap **Being checked**.
+1. **Report an issue** — pick a type, write a line, tap the map, send.
+   You get a reference code like `WLG-K7M2Q`. No account, no login.
+2. **WCC view** — your report is on the map. Tap **Being checked**.
 3. **My reports** — the status has already changed. Nothing was refreshed and
    nobody was rung.
 
-That is the graded wording of Problem 02 — communities "see that their
-information has been received" — as a working thing rather than a diagram.
+That is the entire product thesis in three clicks.
 
-### What it does
+---
 
-- **Reference code instead of auth.** No accounts. During an emergency a login
-  screen is a barrier between someone and the information you need from them.
-  Possession of the code is the claim; it is kept on the reporter's device and
-  can be typed in on any other.
-- **Nothing is ever edited.** A status change publishes a *new* signal chained
-  to the original report, and current status is derived by replaying the chain.
-  The reporter's view and the council's view cannot disagree, and afterwards
-  there is a complete timestamped record of who knew what and when. This falls
-  out of the platform's own shape: `publish_signal` exists, `update_signal`
-  does not.
-- **Similar reports group.** Same issue type, within 250 m, inside six hours.
-  Deliberately arithmetic rather than a language model, so it is explainable to
-  a duty officer and works with no API key.
-- **Hazard context, labelled as inferred.** When a report lands, the WCC hazard
-  layers are asked what is true of that location — tsunami evacuation zone,
-  nearest Community Emergency Hub. Shown as context, never as confirmed fact.
-- **It composes.** `/api/geojson` and `/api/signals` are CORS-open and need no
-  key, so any other team's map can read this module directly.
+## Why this shape
 
-### The message board
+**A third of council call-centre volume is people asking "what's happening
+with the thing I reported".** Every one of those calls is a person who already
+gave the council information and got nothing back. The model here is delivery
+tracking, not a support ticket: one tap from staff becomes an update the
+reporter sees immediately.
 
-The reporting loop is one-to-one. The board is the other half — everyone
-talking to everyone, with officials clearly identifiable. Three surfaces, all
-on the same append-only log:
+**The reference code is the whole auth model.** There are no accounts. During
+an emergency, a login screen is a barrier between someone and the information
+you need from them. Possession of the code is the claim; it is stored on the
+reporter's device and can be typed in on any other.
+
+**Nothing is ever edited.** A status change publishes a *new* signal that
+chains to the original report. Current status is derived by replaying the
+chain, which means the reporter's view and the council's view cannot disagree,
+and after the event there is a complete, timestamped record of who knew what
+and when. That is an audit trail an emergency-management body actually needs —
+and it came free from a platform constraint (`publish_signal` exists,
+`update_signal` does not).
+
+**Inference is labelled as inference.** When a report lands we look up what
+the WCC hazard layers say about that location — tsunami evacuation zone,
+nearest Community Emergency Hub. That is shown as context and marked as
+inferred, never as confirmed fact. Presenting something unverified as verified
+is the failure mode these problem statements are most wary of.
+
+---
+
+## The message board
+
+The reporting loop is one-to-one: you tell the council something, the council
+tells you what happened to it. The board is the other half — everyone talking
+to everyone, with officials clearly identifiable.
+
+Three surfaces, one log:
 
 - **Agency wall** — eight real agencies (WCC Emergency Management, WREMO,
   Wellington Water, FENZ, Police, Greater Wellington, Free Ambulance, Red
   Cross), each its own channel, all on one screen. Officials coordinating with
-  each other. **The public are not in these** — a public request for an agency
-  channel is a 403, and agency channels are absent from the public channel
-  list entirely rather than filtered out of it.
-- **Public boards** — city-wide plus one per suburb. Anyone posts; officials
-  are badged with their agency, everyone else is a neighbour.
+  each other. **The public are not in these and cannot read them** — a request
+  for an agency channel from a public viewer is a 403, not a filtered list.
+- **Public boards** — a city-wide board plus one per suburb. Anyone posts.
+  Officials are badged with their agency; everyone else is a neighbour.
 - **Important comms banner** — officials publish one line and it appears at
   the top of every public screen at once, at four escalating levels.
 
-The author picks **Everyone can see this** or **Only officials** per message —
-the second for anything about a named person, like a welfare concern about a
-neighbour. Officials can flag a message, which takes it out of the public feed
-and leaves a visible marker in its place.
+### Visibility and flagging
 
-That last detail matters. Because the log is append-only, a flag is a *new*
-signal chaining to the message, never an edit or a delete, so **moderation on
-a public emergency board cannot silently erase what somebody said**. Clearing
-the banner works the same way — another entry, not a deletion, so afterwards
-you can say exactly what was displayed and for how long.
+The person posting chooses **Everyone can see this** or **Only officials** —
+the second is for anything about a named person, like a welfare concern about
+a neighbour. Officials can flag a message, which takes it out of the public
+feed and leaves a visible marker in its place.
 
-No new storage and no new dependency: a message is a `chat-message` signal, a
-flag is a `chat-flag` chaining to it, the banner is a `comms-banner`. The
-existing `?since=` cursor already makes it live.
+That last detail is the point. Because the log is append-only, a flag is a new
+signal chaining to the message rather than an edit or a delete. **Moderation
+on a public emergency board can never silently erase what somebody said** —
+the content goes, the fact that something was there does not. Officials still
+see the original and the reason. Clearing a banner works the same way: another
+entry, not a deletion, so afterwards you can say exactly what was displayed
+and for how long.
 
-**Identity is deliberately absent**, matching the reference-code model — a
-random per-browser `author_id` in `localStorage` that proves nothing and only
-lets the board show you your own private messages after a reload. Officials
-are marked by a client-set role, so on a public deployment anyone can claim
-one. That is the first thing this needs before it is more than a demo.
+### Identity
 
-**The demo content is invented.** `demo_data.py` fills the board with one
-coherent scenario matching the seeded reports. The agencies are real so a WCC
-judge sees their own operating picture, but none of them wrote any of it and
-it describes no real incident — the agency wall says so on screen.
+There is none, deliberately, and it is the same possession model as the
+reference code. A browser mints a random `author_id` into `localStorage`; it
+proves nothing, it just lets the board show you your own private messages
+after a reload. **Officials are marked by a role the client sets, so on a
+public deployment anyone can claim to be one.** Real identity is the first
+thing this needs before it is more than a demo — see the limitations below.
 
-### Access cards
+### The demo data is invented
+
+`demo_data.py` fills the board with a single coherent scenario: heavy rain,
+flooding at Ngauranga, a slip in Wadestown, a power cut in Aro Valley — the
+same incidents as the seeded reports. The agencies are real so a WCC judge
+sees their own operating picture, but **none of them wrote any of it and it
+describes no real incident**. The agency wall says so on screen. If this ever
+moves beyond a prototype, that file goes and the channels stay empty until the
+agencies are actually in them.
+
+---
+
+## Access cards
 
 Everything else here runs on possession: a reference code proves you filed a
 report, a browser token shows you your own messages. That is right for the
@@ -170,6 +172,12 @@ role and put words in an agency's mouth.
 
 An emergency cannot depend on an online identity provider. The network is the
 thing that fails. So: **a printed card in a wallet.**
+
+**Want to try the official side right now?** Six working demo cards are
+published in **[DEMO_CARDS.md](DEMO_CARDS.md)** — tap one in the sign-in
+dialog, follow a `?card=` link, or type it. They work on the live instance.
+
+To mint your own:
 
 ```bash
 python3 run.py --issue-card coordinator "Duty Coordinator"
@@ -231,7 +239,7 @@ delegation stays auditable while the secret stays out of the audit stream.
 
 ---
 
-### Spam, thin messages, and earned trust
+## Spam, thin messages, and earned trust
 
 ### The board asks for enough to act on
 
@@ -285,7 +293,7 @@ cards.
 
 ---
 
-### Sustainability
+## Sustainability
 
 Two claims, both checkable.
 
@@ -328,125 +336,238 @@ are the same thing.
 
 ---
 
-### The map has no dependencies
+## It composes
 
-Plain SVG: real WCC GeoJSON projected into a viewBox, about eighty lines in
-`web/app.js`. No MapLibre, no Leaflet, no CDN — a `<script src>` to someone
-else's server is a single point of failure that fails exactly when the venue
-wifi does. `tools/fetch_basemap.py` bakes the geometry to
-`web/data/basemap.json`, so a fresh clone renders fully offline. Layers: the
-19 tsunami evacuation zones and all 60 Community Emergency Hubs.
+The brief asks for modules that feed one shared common operating picture,
+and for outputs that compose — a feed, an endpoint, GeoJSON — over a
+self-contained UI nothing else can read.
+
+```
+GET /api/geojson     every report as a GeoJSON FeatureCollection
+GET /api/signals     the raw append-only log, with a ?since= cursor
+```
+
+`/api/geojson` is CORS-open and needs no key. Point any other team's map
+straight at it:
+
+```js
+fetch('https://impact-lab.bitn.cloud/api/geojson').then(r => r.json())
+```
+
+**Consuming it from Python?** Set a User-Agent. Cloudflare's browser-integrity
+check rejects the bare `Python-urllib/x.y` default with a 1010, so
+`urllib.request.urlopen(url)` with no headers gets a 403 while every other
+client — `requests`, `curl`, a browser — is fine. This bit us in our own smoke
+test:
+
+```python
+req = urllib.request.Request(url, headers={"User-Agent": "your-module/1.0"})
+```
+
+Identifying your module is good manners anyway, and it means a council can
+tell who is calling.
+
+Each feature carries `reference`, `issue_type`, `severity`, `status`,
+`group_id` and `place_name`.
+
+### All endpoints
+
+| | |
+|---|---|
+| `GET /api/health` | liveness + signal count |
+| `GET /api/meta` | issue types, statuses, map extent |
+| `POST /api/reports` | submit a report → reference code |
+| `GET /api/reports` | every report with status and group (the WCC view) |
+| `GET /api/reports/<ref>` | one report + its full status timeline |
+| `POST /api/reports/<ref>/status` | one-tap status update |
+| `GET /api/geojson` | reports as GeoJSON |
+| `GET /api/signals?since=` | the append-only log |
+| `GET /api/basemap` | cached WCC hazard geometry |
+| `GET /api/banner` | the important-comms banner, if one is showing |
+| `POST /api/banner` | publish or clear it |
+| `GET /api/chat/channels?viewer=` | channel lists (agency channels only for officials) |
+| `GET /api/chat/messages?channel=` | messages, filtered for who is asking |
+| `POST /api/chat/messages` | post to a board or an agency channel |
+| `POST /api/chat/flag` | flag / unflag a message (needs `moderate.flag`) |
+| `POST /api/auth/redeem` | exchange a printed card code for a session |
+| `GET /api/auth/me` | who the server thinks you are |
+| `POST /api/auth/issue` | mint a card (needs `card.issue`, bounded by `max_issue`) |
+| `POST /api/auth/revoke` | cancel a card and kill its sessions |
+| `GET /api/auth/cards` | issued cards (never their codes) |
+| `GET /api/trust/candidates` | trust scores with their reasons |
+| `POST /api/trust/run` | promote everyone eligible |
+
+---
+
+## Dropping onto the platform
+
+`loader.py` implements the platform contract — `main()`, `tick()`, `sample()`.
+
+```bash
+python3 loader.py           # run the poller
+python3 loader.py sample    # print one representative signal
+```
+
+It binds to `wcc_impact` if that is importable and to the local append-only log
+if it is not, through the same `ReportService`. **The same code path runs in
+both cases; only the store differs.** So this repo is not blocked waiting for
+the SDK, and nothing has to be rewritten when the SDK arrives — change
+`MODULE_ID` and go.
+
+It also resolves an open question the prep notes flagged: whether
+`publish_signal()` returns the created signal, which the reference code was
+assumed to depend on. `PlatformStore` mints the reference itself and carries it
+in `raw.reference`, so it works either way. Still worth asking; no longer
+blocking.
+
+`tick()` acknowledges any `community-report` signal that has not been
+acknowledged — including reports published by **another** module. If the
+social-feed sketch turns a public post into a report signal, this closes the
+loop on it too, without either module knowing the other exists. The log is the
+entire integration surface.
+
+---
+
+## Layout
+
+```
+run.py                 start here
+server.py              HTTP + JSON API (stdlib http.server)
+loader.py              platform contract; wcc_impact or local
+core/
+  signals.py           the signal schema, standalone
+  store.py             append-only JSONL log
+  reports.py           the two-way loop: submit, acknowledge, group, GeoJSON
+  hazard.py            hazard context — cached, backgrounded, never load-bearing
+web/                   the app: one HTML, one CSS, one JS, no framework
+  data/basemap.json    baked WCC geometry (regenerate with tools/fetch_basemap.py)
+tests/                 python3 -m unittest discover tests
+tools/fetch_basemap.py pull + simplify the WCC layers
+wcc_gis.py             the WCC GIS SDK (unmodified, from the data repo)
+catalogue.json         74 catalogued WCC datasets
+reference/             platform cheatsheet, data sources, gotchas, design notes
+loader-sketches/       the two prep-kit sketches, for reference
+enrichment/            prep-kit helpers (two bugs fixed — see below)
+```
 
 ### Tests
 
 ```bash
-python3 -m unittest discover tests -v      # 114 tests, ~2.5s
+python3 -m unittest discover tests -v      # 88 tests, ~2.4s
 ```
 
-Standard library `unittest`, no pytest. They cover the things that would break
-the demo or mislead the council, plus every message-board visibility rule —
-who can read an agency channel, whether a private message leaks, and that
-flagging never deletes: acknowledgement fires without a human, status
-is derived rather than stored, the log survives a restart including a torn
-final line, grouping does what the interface claims, and GeoJSON comes out
-lng/lat the right way round.
+They cover the things that would break the demo or mislead the council, plus
+every message-board visibility rule — who can read an agency channel, whether a
+private message leaks, and that flagging never deletes:
+acknowledgement fires without a human, status is derived rather than stored,
+the log survives a restart (including a torn final line), grouping does what
+the interface claims, and GeoJSON comes out lng/lat the right way round.
 
-### It still drops onto the platform
+---
 
-`loader.py` implements the platform contract — `main()`, `tick()`, `sample()`
-— and is the working implementation of the design in
-`reference/report-status-design.md`. It binds to `wcc_impact` if that is
-importable and to a local append-only log if it is not, through the same
-`ReportService`: the same code path in both cases, only the store differs. So
-nothing here was blocked waiting for the SDK, and nothing needs rewriting when
-it arrives.
+## The map
 
-It also settles one of that design's open questions — whether
-`publish_signal()` returns the created signal, which the reference code was
-assumed to need. `PlatformStore` mints the reference itself and carries it in
-`raw.reference`, so it works either way.
+Plain SVG. Real WCC GeoJSON projected into a viewBox, about eighty lines in
+`web/app.js`. No MapLibre, no Leaflet, no CDN.
 
-## Data
+That is deliberate. A `<script src="https://cdn...">` is a single point of
+failure that fails exactly when the venue wifi does, which is during the demo.
+`tools/fetch_basemap.py` bakes the geometry to `web/data/basemap.json`, so a
+fresh clone renders **fully offline**.
 
-The public GIS datasets Wellington City Council Emergency Management shared are
-catalogued, checked and made queryable here:
+Layers: the 19 tsunami evacuation zones, and all 60 Community Emergency Hubs.
 
-- **Catalogue + SDK** — https://github.com/claudecommunity-nz/wcc-emergency-gis-data
-- **Browse the datasets** — https://claudecommunity-nz.github.io/wcc-emergency-gis-data/
+---
 
-74 datasets: flood, landslide, earthquake, tsunami, coastal inundation and
-climate layers, plus emergency hubs, post-quake road reopening order, water
-tanks, deprivation by area, and live river-level and rainfall telemetry.
-`wcc_gis.py` is a single file with no dependencies — copy it and
-`catalogue.json` into your project.
+## Two bugs fixed in the prep kit
 
-```python
-import wcc_gis
+Both in `enrichment/hazard_context.py`, both verified live against the WCC
+services on 2026-08-08. Worth knowing about if you use that module elsewhere.
 
-wcc_gis.ids("tsunami")                                    # find datasets
-wcc_gis.features("tsunami-evacuation-zones", at=(-41.2790, 174.7804))
-wcc_gis.geojson("footpaths", bbox=wcc_gis.WELLINGTON)     # straight into MapLibre
-wcc_gis.hilltop_data("Hutt River at Taita Gorge", "Flow")[-1]
-```
+**Hubs came back with `name: None`.** The code read `Name` / `HubName` /
+`FACILITY`; the live layer publishes `NAME` / `ADDRESS` / `SUBURB` in upper
+case. All 60 hubs were anonymous.
 
-Three traps worth knowing before you lose an hour to them:
+**"Nearest" hub was not the nearest.** A `near=` query is a spatial *filter*,
+not a sort — it returns what is inside the radius in arbitrary order, so
+`limit=1` returned an arbitrary hub within 5 km. A Newtown report was told its
+nearest hub was Aro Valley, about 2 km further than the right answer. Now all
+candidates are fetched and sorted by haversine here. Telling someone the wrong
+place to walk to during an emergency is not a cosmetic bug.
 
-- Everything is published in **NZTM2000, not lat/lng**. Request raw and your
-  pins land off the coast of Africa. Always ask for `outSR=4326`.
-- **A quarter of the layers are rasters** that advertise a query capability,
-  then refuse to answer. Ask them for a PNG instead.
-- **One query is silently capped** (`footpaths` has 8,130 features; a request
-  returns 2,000). Page properly, or check `exceededTransferLimit`.
-
-Two further traps, found in `enrichment/hazard_context.py` and fixed here.
-Both were verified live against the WCC services on 2026-08-08, and both fail
-*quietly* — worth knowing if you use that module.
-
-- **Hubs came back `name: None`.** The code read `Name` / `HubName` /
-  `FACILITY`; the live layer publishes `NAME` / `ADDRESS` / `SUBURB` in upper
-  case. All 60 hubs were anonymous.
-- **"Nearest" hub was not the nearest.** A `near=` query is a spatial *filter*,
-  not a sort — it returns whatever is inside the radius in arbitrary order, so
-  `limit=1` gave an arbitrary hub within 5 km. A Newtown report was told its
-  nearest hub was Aro Valley, about 2 km further than the right answer. Now all
-  candidates are fetched and sorted by haversine. Telling someone the wrong
-  place to walk to during an emergency is not a cosmetic bug.
-
-There is a third, unrelated one: `enrichment/signal_helpers.py` does
+There is a third, unrelated trap in `enrichment/signal_helpers.py`: it does
 `from wcc_impact import ...` at module scope, so it cannot be imported at all
 without the SDK. `core/signals.py` is a standalone equivalent with the same
 field names and limits.
 
-## Schedule
+---
 
-| Time | What |
-|---|---|
-| 08:00 | Arrival and mingle |
-| 09:00 | Opening address & problem briefing |
-| 09:30 | Build begins |
-| 12:30 | Lunch + lightning talks |
-| 16:00 | Submissions close |
-| 16:30 | Demos + judging |
-| 17:45 | Awards + next steps |
+## Where to pick up
 
-## Ground rules
+Roughly in order of demo value.
 
-- These are **hazard-planning layers, not live emergency information**.
-  In an emergency, call 111.
-- **The data is not ours.** Each dataset belongs to its publisher — WCC, Greater
-  Wellington, GNS Science, NIWA, Wellington Water, MBIE, NZTA, MetService.
-  Licence terms vary per dataset; check the dataset's page before publishing
-  anything derived from it, and credit the publisher.
-- Be considerate with request rates. These are council servers, and at least one
-  host throttles under concurrent load.
-- **Keep personal details out of this repo.** It is public. No participant
-  names, contact details or application material.
-- Treat public social content as a *signal to investigate*, never as verified
-  fact — surfacing something unverified as confirmed is the failure mode these
-  problem statements are most wary of.
+- **Photos.** The form takes a photo *URL*; there is no upload. The platform
+  has `upload_file()`; a local fallback needs a multipart handler in
+  `server.py`.
+- **Grouping is arithmetic** — same type, 250 m, 6 hours (`core/reports.py`,
+  `ReportService.group`). Deliberately explainable to a duty officer, and it
+  works with no API key. `ask_claude()` could group by *meaning* instead;
+  keep the arithmetic path as the fallback.
+- **Free-text triage.** `loader-sketches/track4_triage.py` classifies into
+  action / verify / awareness with a priority. Wiring it in would give the
+  WCC queue a sort order.
+- **Notify the reporter.** Right now they have to have the page open. Web
+  Push, or an SMS gateway, closes it properly.
+- **The reporter cannot reply.** Genuinely two-way would let them answer
+  "is it still blocked?" — a second signal type chaining to the same report.
+- **Cards are bearer credentials.** Whoever holds the printed card is that
+  person, like a hotel key. That is the deliberate trade for something usable
+  by a stressed volunteer at 3am with no signal — which is why cards are
+  scoped to one role and revocable, and why a lost one should be cancelled
+  immediately.
+- **Sessions live in memory.** Restarting the server signs everyone out. Cards
+  themselves survive; only the sessions do not.
+- **There is no transport security by itself.** A code typed over plain HTTP
+  is readable in transit. The deployed instance is behind TLS; if you run this
+  on a local network, that is a decision to make consciously.
+- **The reporter cannot reply on their own thread yet.** The board covers
+  everyone-to-everyone; per-report conversation reuses the same primitive
+  (`channel_id` = the reference code) and is the next thing to wire up.
 
-## Licence
+---
 
-Code here is MIT unless stated otherwise. The data is not covered by it.
+## Honest limitations
 
-> Working demo access cards for the live instance are published in [DEMO_CARDS.md](DEMO_CARDS.md).
+- **No authentication anywhere.** Any caller can move any report to any
+  status. `run.py` binds to `127.0.0.1` for that reason; `--host 0.0.0.0`
+  exposes it to the room and warns you when it does.
+- **Not a live council service.** Nothing here is monitored, and no report
+  filed into it reaches a real duty officer.
+- **Hazard-planning layers, not live emergency information.** In an emergency,
+  call 111.
+- **The data is not ours.** Each dataset belongs to its publisher — WCC,
+  Greater Wellington, GNS Science, NIWA, Wellington Water, MBIE, NZTA,
+  MetService. Licences vary per dataset; check before publishing anything
+  derived, and credit the publisher.
+- **Be considerate with request rates.** These are council servers, and at
+  least one throttles under concurrent load. Hazard lookups are cached per
+  ~11 m and the basemap is baked, specifically to keep the request count down.
+- **This repo is public and holds no personal information.** No participant
+  names, no contact details, nothing from the application process. Please keep
+  it that way — and note the seeded demo reports are invented, not real.
+
+---
+
+## Credit
+
+Built on the Team 6 prep kit
+([claudecommunity-nz/impact.lab.wlg.team-6.2026-08-08](https://github.com/claudecommunity-nz/impact.lab.wlg.team-6.2026-08-08)),
+which carries the problem statement, the platform cheatsheet and the two
+loader sketches from
+[mikeartee/impact-lab-prep](https://github.com/mikeartee/impact-lab-prep).
+
+`wcc_gis.py` and `catalogue.json` are unmodified from
+[claudecommunity-nz/wcc-emergency-gis-data](https://github.com/claudecommunity-nz/wcc-emergency-gis-data)
+— 74 catalogued datasets, [browsable here](https://claudecommunity-nz.github.io/wcc-emergency-gis-data/).
+
+Code is MIT. The data is not covered by it.
