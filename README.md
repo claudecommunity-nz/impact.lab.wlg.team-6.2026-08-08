@@ -3,7 +3,7 @@
 **Impact Hub Wellington 2026 · Team 6 · Problem 02**
 Wellington City Council Emergency Management × Claude Code Community NZ
 
-### ▶ [Watch the walkthrough](https://impact-lab.bitn.cloud/walkthrough.mp4) · 📊 [Open the presentation](https://impact-lab.bitn.cloud/presentation.html) · 🌐 [Use the live product](https://impact-lab.bitn.cloud)
+### ▶ [Watch the walkthrough](https://impact-lab.bitn.cloud/walkthrough.mp4) · ⚡ [Four slides](https://impact-lab.bitn.cloud/showcase.html) · 📊 [Full deck](https://impact-lab.bitn.cloud/presentation.html) · 🌐 [Live product](https://impact-lab.bitn.cloud)
 
 *Narrated 2m35s video · 12-slide deck for a 3-minute talk · the real thing,
 running, with live NZTA and river-gauge data.*
@@ -20,6 +20,7 @@ happening to it**.
 | | |
 |---|---|
 | **[Narrated walkthrough (2m35s)](https://impact-lab.bitn.cloud/walkthrough.mp4)** | Hosted — plays in the browser. Script: [VOICEOVER.md](VOICEOVER.md) |
+| **[Four slides](https://impact-lab.bitn.cloud/showcase.html)** | Real production screenshots, one idea each — the short version |
 | **[Presentation (12 slides, 3 min)](https://impact-lab.bitn.cloud/presentation.html)** | Hosted — press `F` for fullscreen. Talking points: [PRESENTATION.md](PRESENTATION.md) |
 | **[The product itself](https://impact-lab.bitn.cloud)** | Live, with real NZTA and river-gauge data |
 
@@ -32,8 +33,8 @@ voiceover.
 ## Run it
 
 ```bash
-git clone https://github.com/claudecommunity-nz/impact.lab.wlg.team-6.2026-08-08
-cd impact.lab.wlg.team-6.2026-08-08
+git clone https://github.com/jasonagnewnz/wcc-two-way-channel
+cd wcc-two-way-channel
 python3 run.py --seed
 ```
 
