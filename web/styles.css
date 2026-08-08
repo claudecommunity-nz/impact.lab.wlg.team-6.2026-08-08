@@ -944,3 +944,76 @@ h3, h4 { letter-spacing: -.008em; }
 
 .tlwrap { display: inline-flex; align-items: center; gap: 5px; font-size: .74rem; }
 .tlwrap .lbl { color: var(--ink-2); font-weight: 600; }
+
+/* ═══ FOLDER TABS ═══════════════════════════════════════════
+   Ten sections is too many to hold in your head as one undifferentiated
+   row, so they are colour-coded into four families and shaped as folder
+   tabs sitting on a rule:
+
+     teal    the one view — everything on one map
+     green   yours — what you sent and what came back
+     amber   community — updates, the board, the map people build
+     grey    help
+     slate   operations — needs a card
+
+   Colour is the grouping and the SHAPE is the affordance; neither carries
+   the meaning alone, so it still reads for anyone who cannot separate the
+   hues, and the label always says what it is. */
+
+.tabs {
+  align-items: flex-end;
+  gap: 2px;
+  border-bottom: 2px solid var(--line);
+  padding-bottom: 0;
+  margin-bottom: -1px;
+}
+.tab {
+  position: relative;
+  border-radius: 8px 8px 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  padding: 8px 13px 9px;
+  margin-bottom: -2px;
+  background: transparent;
+  font-weight: 550;
+}
+/* the coloured spine along the top of each folder */
+.tab::after {
+  content: "";
+  position: absolute; left: 8px; right: 8px; top: 3px; height: 2.5px;
+  border-radius: 2px; background: var(--tabc, transparent);
+  opacity: .5; transition: opacity .15s ease;
+}
+.tab:hover { background: color-mix(in srgb, var(--tabc, var(--accent)) 9%, transparent); }
+.tab:hover::after { opacity: .9; }
+
+/* the open folder joins the page below it */
+.tab.is-active {
+  background: var(--card);
+  color: var(--ink);
+  font-weight: 700;
+  border-color: var(--line);
+  border-bottom: 2px solid var(--card);
+  box-shadow: 0 -2px 6px rgba(16,24,34,.05);
+}
+.tab.is-active::after { opacity: 1; height: 3px; }
+
+.tab.g-view { --tabc: #0a5f6b; }
+.tab.g-mine { --tabc: #127a4b; }
+.tab.g-comm { --tabc: #b26a00; }
+.tab.g-help { --tabc: #7285a0; }
+.tab.g-ops  { --tabc: #3d4f63; }
+
+/* Operations sit slightly apart — a different half of the product. */
+.tab.g-ops:first-of-type { margin-left: 10px; }
+.tab.g-ops { color: var(--ink-3); }
+.tab.g-ops.is-active { color: var(--ink); }
+
+/* The pill has to survive on an active folder. */
+.tab.is-active .pill { background: color-mix(in srgb, var(--tabc) 22%, transparent); color: var(--tabc); }
+
+@media (max-width: 900px) {
+  .tabs { border-bottom-width: 1px; }
+  .tab { padding: 8px 11px; font-size: .8rem; }
+  .tab.g-ops:first-of-type { margin-left: 6px; }
+}

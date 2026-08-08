@@ -21,19 +21,17 @@
       <span class="sub">Two-way reporting channel</span>
     </div>
   </div>
-  <nav class="tabs" role="tablist">
-    <button class="tab is-active" data-view="live" role="tab">Live map</button>
-    <button class="tab" data-view="report" role="tab">Report</button>
-    <button class="tab" data-view="mine" role="tab">My reports <span class="pill" id="mine-count" hidden></span></button>
-    <button class="tab" data-view="news" role="tab">Updates</button>
-    <button class="tab" data-view="board" role="tab">Board</button>
-    <button class="tab" data-view="community" role="tab">Community</button>
-    <button class="tab" data-view="help" role="tab">Help</button>
-    <span class="tabsplit" aria-hidden="true"></span>
-    <span class="tabgroup">Ops</span>
-    <button class="tab" data-view="ops" role="tab">Queue</button>
-    <button class="tab" data-view="wall" role="tab">Comms hub</button>
-    <button class="tab" data-view="cards" role="tab">Cards</button>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab g-view is-active" data-view="live" role="tab">Live map</button>
+    <button class="tab g-mine" data-view="report" role="tab">Report</button>
+    <button class="tab g-mine" data-view="mine" role="tab">My reports <span class="pill" id="mine-count" hidden></span></button>
+    <button class="tab g-comm" data-view="news" role="tab">Updates</button>
+    <button class="tab g-comm" data-view="board" role="tab">Board</button>
+    <button class="tab g-comm" data-view="community" role="tab">Community</button>
+    <button class="tab g-help" data-view="help" role="tab">Help</button>
+    <button class="tab g-ops" data-view="ops" role="tab">Queue</button>
+    <button class="tab g-ops" data-view="wall" role="tab">Comms hub</button>
+    <button class="tab g-ops" data-view="cards" role="tab">Cards</button>
   </nav>
   <div class="whoarea">
     <span class="rolebadge" id="role-badge" hidden></span>
@@ -494,6 +492,12 @@
           <strong>hazard-planning data, not live emergency information</strong>.
         </p>
         <ul class="links" id="help-links"></ul>
+        <p class="hint">
+          Reading these from a script? Send a <code>User-Agent</code> header.
+          Cloudflare rejects the bare <code>Python-urllib</code> default with a
+          1010 — every other client is fine, and naming your module means a
+          council can tell who is calling.
+        </p>
         <p class="attrib">
           Data belongs to its publishers — WCC, Greater Wellington, GNS
           Science, NIWA, Wellington Water, MBIE, NZTA, MetService. Licence
