@@ -21,6 +21,7 @@ happening to it**.
 |---|---|
 | **[Narrated walkthrough (2m35s)](https://impact-lab.bitn.cloud/walkthrough.mp4)** | Hosted — plays in the browser. Script: [VOICEOVER.md](VOICEOVER.md) |
 | **[Four slides](https://impact-lab.bitn.cloud/showcase.html)** | Real production screenshots, one idea each — the short version |
+| **[four-slides.html](four-slides.html)** | The same four slides as **one self-contained file** — download it and open it anywhere, no internet needed |
 | **[Presentation (12 slides, 3 min)](https://impact-lab.bitn.cloud/presentation.html)** | Hosted — press `F` for fullscreen. Talking points: [PRESENTATION.md](PRESENTATION.md) |
 | **[The product itself](https://impact-lab.bitn.cloud)** | Live, with real NZTA and river-gauge data |
 
