@@ -192,7 +192,10 @@ class Map {
     this.svg.setAttribute('aria-label', 'Map of Wellington showing tsunami evacuation zones, emergency hubs and community reports');
 
     this.layers = {};
-    for (const name of ['zones', 'hubs', 'pins', 'pick']) {
+    // Streets first: hazard zones wash over the network, markers sit on top.
+    // That stacking is what makes it read as an operational map rather than
+    // shapes on a background.
+    for (const name of ['streets', 'zones', 'hubs', 'pins', 'pick']) {
       const g = document.createElementNS(SVG_NS, 'g');
       g.dataset.layer = name;
       this.svg.appendChild(g);
@@ -248,6 +251,7 @@ class Map {
     const hubs = this.layers.hubs;
     zones.textContent = '';
     hubs.textContent = '';
+    this.drawStreets(collection.streets || []);
 
     for (const feature of (collection.features || [])) {
       const props = feature.properties || {};
@@ -276,6 +280,34 @@ class Map {
         hubs.appendChild(el);
       }
     }
+  }
+
+  /**
+   * The street network, from OpenStreetMap, baked into basemap.json.
+   *
+   * One <path> per weight class rather than 6,527 separate elements — the
+   * browser draws four paths instead of thousands, and the whole network
+   * lands in a single paint. Weight carries the hierarchy: without it, 6,500
+   * streets is an even grey smear with no shape to recognise.
+   */
+  drawStreets(streets) {
+    const layer = this.layers.streets;
+    layer.textContent = '';
+    if (!streets.length) return;
+
+    const buckets = [[], [], [], []];
+    for (const road of streets) {
+      const d = road.p.map(([lng, lat], i) =>
+        `${i ? 'L' : 'M'}${this.x(lng).toFixed(1)} ${this.y(lat).toFixed(1)}`).join('');
+      buckets[road.w].push(d);
+    }
+    buckets.forEach((paths, weight) => {
+      if (!paths.length) return;
+      const el = document.createElementNS(SVG_NS, 'path');
+      el.setAttribute('d', paths.join(''));
+      el.setAttribute('class', `street s${weight}`);
+      layer.appendChild(el);
+    });
   }
 
   drawPins(reports, { onClick } = {}) {
