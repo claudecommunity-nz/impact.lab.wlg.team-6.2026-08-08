@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Impact Hub Wellington 2026 · Team 6 — Four slides</title>
+<style>
+/* Four slides, real screenshots from production. Self-contained. Press F. */
+:root{
+  --ink:#f2f6f8; --dim:#9db1c2; --bg:#0a1116; --teal:#4fc3d4;
+  --green:#4cc38a; --amber:#e0a13c; --red:#ff6b60;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);overflow:hidden;
+  font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+
+.slide{position:absolute;inset:0;display:none;animation:in .4s ease both}
+.slide.on{display:grid}
+@keyframes in{from{opacity:0}}
+@media(prefers-reduced-motion:reduce){.slide{animation:none}}
+
+/* screenshot fills the frame; the copy sits over a dark scrim on one side */
+/* Copy on the left, screenshot bleeding off the right. The text needs its own
+   column — overlaying it on the image made both harder to read. */
+.slide{display:none}
+.slide.on{display:block}
+/* Absolute rather than grid: the image needs a guaranteed full-height frame,
+   and an auto-sized grid row kept collapsing it. */
+.shot{position:absolute;top:0;bottom:0;right:0;width:56%;
+  background-size:cover;background-position:left top;
+  border-left:1px solid rgba(79,195,212,.22)}
+.scrim{position:absolute;top:0;bottom:0;right:0;width:58%;
+  background:linear-gradient(90deg,rgba(10,17,22,.95) 0%,rgba(10,17,22,.2) 18%,rgba(10,17,22,0) 46%)}
+.copy{position:absolute;top:50%;left:0;transform:translateY(-50%);z-index:2;
+  width:44%;padding:0 3vw 0 5vw}
+
+.eyebrow{font-family:var(--mono);font-size:clamp(.68rem,1vw,.9rem);letter-spacing:.18em;
+  text-transform:uppercase;color:var(--teal);margin-bottom:2.4vh}
+h1{font-size:clamp(1.7rem,3.5vw,3.2rem);line-height:1.04;letter-spacing:-.03em;
+  margin:0 0 2.6vh;font-weight:800}
+h1 em{font-style:normal;color:var(--teal)}
+p.lede{font-size:clamp(.95rem,1.35vw,1.22rem);color:var(--dim);line-height:1.35;margin:0 0 2.6vh}
+ul{margin:0;padding:0;list-style:none;display:grid;gap:1.6vh}
+li{font-size:clamp(.9rem,1.15vw,1.08rem);line-height:1.38;padding-left:1.5em;position:relative;color:var(--ink)}
+li::before{content:"";position:absolute;left:0;top:.5em;width:.6em;height:.6em;border-radius:50%;background:var(--teal)}
+li.g::before{background:var(--green)} li.a::before{background:var(--amber)} li.r::before{background:var(--red)}
+li b{font-weight:700}
+.kicker{margin-top:2.6vh;font-size:clamp(.8rem,1.05vw,.98rem);color:var(--dim);
+  border-left:3px solid var(--teal);padding-left:1em}
+.url{position:fixed;left:5vw;bottom:2.4vh;z-index:3;font-family:var(--mono);
+  font-size:clamp(.72rem,1.1vw,.95rem);color:var(--teal);letter-spacing:.04em}
+
+.bar{position:fixed;left:0;right:0;bottom:0;height:4px;background:#16242e;z-index:4}
+.bar i{display:block;height:100%;background:var(--teal);transition:width .35s ease}
+.hud{position:fixed;right:2vw;bottom:2.6vh;z-index:4;font-family:var(--mono);font-size:.78rem;color:var(--dim)}
+@media(max-width:900px){
+  .copy{position:static;transform:none;width:auto;padding:5vh 7vw 2vh}
+  .shot{position:absolute;top:auto;bottom:0;left:0;right:0;width:100%;height:38%;
+        border-left:0;border-top:1px solid rgba(79,195,212,.22)}
+  .scrim{display:none}
+  h1{font-size:clamp(1.5rem,6.5vw,2.2rem)}
+}
+@media print{.slide{display:grid!important;page-break-after:always;height:100vh}.bar,.hud{display:none}}
+</style>
+</head>
+<body>
+
+<section class="slide on">
+  <div class="shot" style="background-image:url('shots/01-map.jpg')"></div>
+  <div class="scrim"></div>
+  <div class="copy">
+    <div class="eyebrow">Impact Hub Wellington 2026 · Team 6</div>
+    <h1>Everything happening,<br><em>on one page.</em></h1>
+    <p class="lede">Reports, photos, requests for help, offers, live feeds — and
+      what the Council has confirmed itself.</p>
+    <ul>
+      <li class="g">Real NZTA road events and river gauges, fetched live</li>
+      <li>Filter to your own street — <b>your location never leaves your browser</b></li>
+    </ul>
+    <p class="kicker">One page. Not eleven tabs and a phone call.</p>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="shot" style="background-image:url('shots/02-queue.jpg')"></div>
+  <div class="scrim"></div>
+  <div class="copy">
+    <div class="eyebrow">The loop</div>
+    <h1>One line in.<br><em>An answer back.</em></h1>
+    <p class="lede">No account, no password. You get a reference code — that is
+      the whole login.</p>
+    <ul>
+      <li class="g"><b>Received → Being checked → On the way → Crew on site → Fixed</b></li>
+      <li>Each one an observable fact with a time on it, not an estimate</li>
+      <li class="a">And the reporter can answer back — <b>"it's cleared" releases a crew</b></li>
+    </ul>
+    <p class="kicker">A third of call-centre volume is people asking what happened
+      to the thing they reported.</p>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="shot" style="background-image:url('shots/03-stacks.jpg')"></div>
+  <div class="scrim"></div>
+  <div class="copy">
+    <div class="eyebrow">Evidence</div>
+    <h1>Five witnesses,<br><em>not four duplicates.</em></h1>
+    <p class="lede">Most systems collapse repeats to reduce clutter. That
+      optimises for a reader.</p>
+    <ul>
+      <li class="g">A duty officer is deciding whether it is <b>real</b> — so repetition <em>is</em> the evidence</li>
+      <li>Photos place their own pin from EXIF, and we <b>strip the metadata</b> from the published copy</li>
+      <li class="r">Reporting a flood must not publish where you live</li>
+    </ul>
+    <p class="kicker">The circle grows with corroboration. The count is the signal.</p>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="shot" style="background-image:url('shots/04-answers.jpg')"></div>
+  <div class="scrim"></div>
+  <div class="copy">
+    <div class="eyebrow">The hard part</div>
+    <h1>Two questions,<br><em>answered honestly.</em></h1>
+    <ul>
+      <li class="g"><b>Are we coming?</b> Confirmed · Likely · Unlikely · <b>We can't</b></li>
+      <li class="a"><b>Roughly when?</b> Within the hour · Today · 24 hours · No ETA</li>
+      <li class="r">"We can't get to this" is a <b>real answer, with a reason</b></li>
+    </ul>
+    <p class="kicker">During a real event it is sometimes the true one — and
+      saying it early lets a neighbour step in, instead of everybody waiting on
+      a status that never changes.</p>
+  </div>
+</section>
+
+<div class="url">impact-lab.bitn.cloud</div>
+<div class="bar"><i id="bar"></i></div>
+<div class="hud" id="hud"></div>
+
+<script>
+const slides=[...document.querySelectorAll('.slide')];let i=0;
+function go(n){
+  i=Math.max(0,Math.min(slides.length-1,n));
+  slides.forEach((s,k)=>s.classList.toggle('on',k===i));
+  bar.style.width=((i+1)/slides.length*100)+'%';
+  hud.textContent=(i+1)+' / '+slides.length;
+  location.hash=i+1;
+}
+addEventListener('keydown',e=>{
+  if(['ArrowRight',' ','PageDown','n'].includes(e.key)){e.preventDefault();go(i+1)}
+  if(['ArrowLeft','PageUp','p'].includes(e.key)){e.preventDefault();go(i-1)}
+  if(e.key==='Home')go(0); if(e.key==='End')go(slides.length-1);
+  if(e.key==='f'||e.key==='F'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()}
+});
+addEventListener('click',e=>go(e.clientX>innerWidth/2?i+1:i-1));
+go(parseInt(location.hash.slice(1))-1||0);
+</script>
+</body>
+</html>
