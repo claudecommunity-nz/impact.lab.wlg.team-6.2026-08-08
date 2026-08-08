@@ -31,6 +31,86 @@ closed-off demo.
 Two teams work each problem statement independently. That's deliberate: two
 honest attempts at the same problem tell WCC more than one.
 
+## The prototype — run it
+
+```bash
+python3 run.py --seed
+```
+
+Then open <http://127.0.0.1:8080>. **No `pip install`, no build step, no API
+key, no database.** Python 3.9+ and the standard library, so it runs on any
+laptop in the room.
+
+Live: **https://impact-lab.bitn.cloud**
+
+### The loop, in three clicks
+
+1. **Report an issue** — pick a type, write a line, tap the map, send. You get
+   a reference code like `WLG-K7M2Q`. No account, no login.
+2. **WCC view** — the report is on the map. Tap **Being checked**.
+3. **My reports** — the status has already changed. Nothing was refreshed and
+   nobody was rung.
+
+That is the graded wording of Problem 02 — communities "see that their
+information has been received" — as a working thing rather than a diagram.
+
+### What it does
+
+- **Reference code instead of auth.** No accounts. During an emergency a login
+  screen is a barrier between someone and the information you need from them.
+  Possession of the code is the claim; it is kept on the reporter's device and
+  can be typed in on any other.
+- **Nothing is ever edited.** A status change publishes a *new* signal chained
+  to the original report, and current status is derived by replaying the chain.
+  The reporter's view and the council's view cannot disagree, and afterwards
+  there is a complete timestamped record of who knew what and when. This falls
+  out of the platform's own shape: `publish_signal` exists, `update_signal`
+  does not.
+- **Similar reports group.** Same issue type, within 250 m, inside six hours.
+  Deliberately arithmetic rather than a language model, so it is explainable to
+  a duty officer and works with no API key.
+- **Hazard context, labelled as inferred.** When a report lands, the WCC hazard
+  layers are asked what is true of that location — tsunami evacuation zone,
+  nearest Community Emergency Hub. Shown as context, never as confirmed fact.
+- **It composes.** `/api/geojson` and `/api/signals` are CORS-open and need no
+  key, so any other team's map can read this module directly.
+
+### The map has no dependencies
+
+Plain SVG: real WCC GeoJSON projected into a viewBox, about eighty lines in
+`web/app.js`. No MapLibre, no Leaflet, no CDN — a `<script src>` to someone
+else's server is a single point of failure that fails exactly when the venue
+wifi does. `tools/fetch_basemap.py` bakes the geometry to
+`web/data/basemap.json`, so a fresh clone renders fully offline. Layers: the
+19 tsunami evacuation zones and all 60 Community Emergency Hubs.
+
+### Tests
+
+```bash
+python3 -m unittest discover tests -v      # 22 tests, ~0.4s
+```
+
+Standard library `unittest`, no pytest. They cover the things that would break
+the demo or mislead the council: acknowledgement fires without a human, status
+is derived rather than stored, the log survives a restart including a torn
+final line, grouping does what the interface claims, and GeoJSON comes out
+lng/lat the right way round.
+
+### It still drops onto the platform
+
+`loader.py` implements the platform contract — `main()`, `tick()`, `sample()`
+— and is the working implementation of the design in
+`reference/report-status-design.md`. It binds to `wcc_impact` if that is
+importable and to a local append-only log if it is not, through the same
+`ReportService`: the same code path in both cases, only the store differs. So
+nothing here was blocked waiting for the SDK, and nothing needs rewriting when
+it arrives.
+
+It also settles one of that design's open questions — whether
+`publish_signal()` returns the created signal, which the reference code was
+assumed to need. `PlatformStore` mints the reference itself and carries it in
+`raw.reference`, so it works either way.
+
 ## Data
 
 The public GIS datasets Wellington City Council Emergency Management shared are
@@ -62,6 +142,25 @@ Three traps worth knowing before you lose an hour to them:
   then refuse to answer. Ask them for a PNG instead.
 - **One query is silently capped** (`footpaths` has 8,130 features; a request
   returns 2,000). Page properly, or check `exceededTransferLimit`.
+
+Two further traps, found in `enrichment/hazard_context.py` and fixed here.
+Both were verified live against the WCC services on 2026-08-08, and both fail
+*quietly* — worth knowing if you use that module.
+
+- **Hubs came back `name: None`.** The code read `Name` / `HubName` /
+  `FACILITY`; the live layer publishes `NAME` / `ADDRESS` / `SUBURB` in upper
+  case. All 60 hubs were anonymous.
+- **"Nearest" hub was not the nearest.** A `near=` query is a spatial *filter*,
+  not a sort — it returns whatever is inside the radius in arbitrary order, so
+  `limit=1` gave an arbitrary hub within 5 km. A Newtown report was told its
+  nearest hub was Aro Valley, about 2 km further than the right answer. Now all
+  candidates are fetched and sorted by haversine. Telling someone the wrong
+  place to walk to during an emergency is not a cosmetic bug.
+
+There is a third, unrelated one: `enrichment/signal_helpers.py` does
+`from wcc_impact import ...` at module scope, so it cannot be imported at all
+without the SDK. `core/signals.py` is a standalone equivalent with the same
+field names and limits.
 
 ## Schedule
 

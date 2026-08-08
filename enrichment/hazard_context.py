@@ -16,6 +16,8 @@ Usage:
 
 from __future__ import annotations
 
+import math
+
 import wcc_gis
 
 
@@ -108,20 +110,50 @@ def _nearby_eq_prone_buildings(lat: float, lng: float, radius_m: int = 500) -> l
         return []
 
 
+def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle distance in metres."""
+    radius = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlam = math.radians(lng2 - lng1)
+    a = (math.sin(dphi / 2) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(dlam / 2) ** 2)
+    return 2 * radius * math.asin(math.sqrt(a))
+
+
 def _nearest_emergency_hub(lat: float, lng: float, radius_m: int = 5000) -> dict | None:
-    """Nearest community emergency hub within radius_m."""
+    """Nearest community emergency hub within radius_m.
+
+    A `near=` query returns features *within* the radius in whatever order
+    the service feels like — it is a spatial filter, not a sort. Asking for
+    `limit=1` therefore returns an arbitrary hub inside 5 km, not the closest
+    one: a Newtown report was told its nearest hub was Aro Valley, roughly
+    2 km further away than the correct answer.
+
+    So: take the candidates, and do the sorting here. Telling someone the
+    wrong place to walk to during an emergency is not a cosmetic bug.
+    """
     try:
         rows = wcc_gis.features(
             "community-emergency-hubs",
             near=(lat, lng, radius_m),
-            limit=1,
+            limit=60,
         )
         if not rows:
             return None
-        r = rows[0]
+        located = [r for r in rows if r.get("lat") is not None and r.get("lng") is not None]
+        if not located:
+            return None
+        r = min(located, key=lambda h: _haversine_m(lat, lng, h["lat"], h["lng"]))
+        # The live layer publishes NAME/ADDRESS/SUBURB in upper case. The
+        # original guesses (Name/HubName/FACILITY) all miss, so every hub came
+        # back named `None` — verified against the real service 2026-08-08.
+        # Upper case first, the old guesses kept as fallbacks in case the
+        # layer's schema differs on the day.
         return {
-            "name": r.get("Name") or r.get("HubName") or r.get("FACILITY"),
-            "address": r.get("Address") or r.get("LOCATION"),
+            "name": r.get("NAME") or r.get("Name") or r.get("HubName") or r.get("FACILITY"),
+            "address": r.get("ADDRESS") or r.get("Address") or r.get("LOCATION"),
+            "suburb": r.get("SUBURB") or r.get("TOWN"),
             "lat": r.get("lat"),
             "lng": r.get("lng"),
         }
