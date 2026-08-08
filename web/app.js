@@ -165,7 +165,25 @@ function updateMineCount() {
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-class Map {
+/**
+ * Set a circle's radius AND record it as the on-screen size to preserve.
+ *
+ * Every marker on the map has to survive zooming: the viewBox shrinks, so a
+ * radius in user units grows on screen. `Map.rescale()` reads `data-r` back
+ * out, which only works if every call site records it — hence one helper
+ * rather than nine hand-written pairs.
+ */
+function setRadius(el, r) {
+  el.dataset.r = r;
+  el.setAttribute('r', String(r));
+  return el;
+}
+
+
+// Named MapView, not Map: a global `class Map` shadows the JavaScript
+// built-in, so any later `new Map()` meant as a dictionary would silently
+// construct a map widget and throw "extent is not iterable".
+class MapView {
   /**
    * Equirectangular projection over a fixed extent. At the scale of one
    * harbour this is visually indistinguishable from a proper projection,
@@ -175,8 +193,9 @@ class Map {
    * noticeably stretched east-west, because a degree of longitude here is
    * only about 0.75 of a degree of latitude on the ground.
    */
-  constructor(el, extent) {
+  constructor(el, extent, options = {}) {
     this.el = el;
+    this.options = options;
     const [w, s, e, n] = extent;
     this.w = w; this.s = s; this.e = e; this.n = n;
 
@@ -186,16 +205,16 @@ class Map {
     this.height = Math.round(this.width * ((n - s) / lonSpan));
 
     this.svg = document.createElementNS(SVG_NS, 'svg');
-    this.svg.setAttribute('viewBox', `0 0 ${this.width} ${this.height}`);
     this.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     this.svg.setAttribute('role', 'img');
-    this.svg.setAttribute('aria-label', 'Map of Wellington showing tsunami evacuation zones, emergency hubs and community reports');
+    this.svg.setAttribute('aria-label', 'Map of Wellington showing the coastline, streets, tsunami evacuation zones, emergency hubs and community reports');
 
     this.layers = {};
-    // Streets first: hazard zones wash over the network, markers sit on top.
-    // That stacking is what makes it read as an operational map rather than
-    // shapes on a background.
-    for (const name of ['streets', 'zones', 'hubs', 'pins', 'pick']) {
+    // Land under everything, then streets, then hazard zones washing over the
+    // network, then names, then markers. That stacking is what makes it read
+    // as an operational map rather than shapes on a background — and it is why
+    // water can simply be the background colour.
+    for (const name of ['land', 'streets', 'zones', 'hubs', 'labels', 'pins', 'pick']) {
       const g = document.createElementNS(SVG_NS, 'g');
       g.dataset.layer = name;
       this.svg.appendChild(g);
@@ -204,30 +223,274 @@ class Map {
 
     el.textContent = '';
     el.appendChild(this.svg);
+
+    this.home = { x: 0, y: 0, w: this.width, h: this.height };
+    this.view = { ...this.home };
+    this.fitToContainer();
+    this.applyView();
+    // The map lives inside a hidden tab until someone opens it, so it has no
+    // size to measure at construction. Watching the box means the first real
+    // layout fits it, and so does every rotation and resize afterwards.
+    if (window.ResizeObserver) {
+      new ResizeObserver(() => this.fitToContainer(true)).observe(el);
+    }
+    if (options.controls) this.buildControls();
+    if (options.zoomable !== false) this.wireGestures();
   }
 
   x(lng) { return (lng - this.w) / (this.e - this.w) * this.width; }
   y(lat) { return (this.n - lat) / (this.n - this.s) * this.height; }
 
-  /** Inverse — for click-to-drop-a-pin. */
+  /**
+   * Inverse — for click-to-drop-a-pin.
+   *
+   * Two corrections, both of which produce silently offset pins if skipped:
+   * the SVG letterboxes inside its box (preserveAspectRatio), and once the
+   * map can be panned the viewBox is no longer anchored at the origin.
+   */
   latlng(clientX, clientY) {
     const box = this.svg.getBoundingClientRect();
-    // The SVG letterboxes inside its box (preserveAspectRatio), so work out
-    // the drawn rectangle before converting, or every pin lands offset.
-    const scale = Math.min(box.width / this.width, box.height / this.height);
-    const drawnW = this.width * scale;
-    const drawnH = this.height * scale;
-    const offX = (box.width - drawnW) / 2;
-    const offY = (box.height - drawnH) / 2;
+    const view = this.view;
+    const scale = Math.min(box.width / view.w, box.height / view.h);
+    const offX = (box.width - view.w * scale) / 2;
+    const offY = (box.height - view.h * scale) / 2;
 
-    const px = (clientX - box.left - offX) / scale;
-    const py = (clientY - box.top - offY) / scale;
+    const px = view.x + (clientX - box.left - offX) / scale;
+    const py = view.y + (clientY - box.top - offY) / scale;
     if (px < 0 || py < 0 || px > this.width || py > this.height) return null;
 
     return {
       lng: this.w + (px / this.width) * (this.e - this.w),
       lat: this.n - (py / this.height) * (this.n - this.s),
     };
+  }
+
+  /* ---- view: pan and zoom -------------------------------------------- */
+
+  /**
+   * Make the visible window match the shape of the box it is drawn in.
+   *
+   * `preserveAspectRatio` letterboxes by default, and the padding it leaves
+   * shows the element's own background. That was invisible while sea and land
+   * were near-identical greys; the moment the water became blue, the padding
+   * read as a straight vertical coastline slicing off the eastern hills.
+   *
+   * So instead of letting the SVG letterbox, the viewBox takes the container's
+   * aspect ratio and covers it, cropping a little of the extent rather than
+   * inventing an edge. Every real map crops to its viewport.
+   */
+  fitToContainer(preserveZoom = false) {
+    const box = this.el.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const aspect = box.width / box.height;
+
+    let w = this.width, h = w / aspect;
+    if (h > this.height) { h = this.height; w = h * aspect; }
+    const wasHome = Math.abs(this.view.w - this.home.w) < 0.5;
+    this.home = { x: (this.width - w) / 2, y: (this.height - h) / 2, w, h };
+
+    if (!preserveZoom || wasHome) {
+      this.view = { ...this.home };
+    } else {
+      // Keep where the user was looking; only restate the shape of the window.
+      const cx = this.view.x + this.view.w / 2;
+      const cy = this.view.y + this.view.h / 2;
+      this.view.w = Math.min(this.view.w, w);
+      this.view.h = this.view.w / aspect;
+      this.view.x = cx - this.view.w / 2;
+      this.view.y = cy - this.view.h / 2;
+    }
+    this.clamp();
+    this.applyView();
+  }
+
+  applyView() {
+    const v = this.view;
+    this.svg.setAttribute('viewBox', `${v.x.toFixed(1)} ${v.y.toFixed(1)} ${v.w.toFixed(1)} ${v.h.toFixed(1)}`);
+    this.rescale();
+  }
+
+  /**
+   * Keep markers and names the same size on screen at every zoom.
+   *
+   * Streets get this free from `vector-effect: non-scaling-stroke`, but a
+   * circle's radius and a label's font-size are geometry, so zooming in eight
+   * times would otherwise inflate every pin to the size of a suburb.
+   */
+  rescale() {
+    const k = this.view.w / this.home.w;
+    for (const node of this.svg.querySelectorAll('[data-r]')) {
+      node.setAttribute('r', (parseFloat(node.dataset.r) * k).toFixed(2));
+    }
+    for (const node of this.svg.querySelectorAll('[data-fs]')) {
+      node.setAttribute('font-size', (parseFloat(node.dataset.fs) * k).toFixed(2));
+    }
+    this.el.classList.toggle('is-zoomed', k < 0.98);
+  }
+
+  /** Zoom about a point in map coordinates, clamped to the extent. */
+  zoomTo(factor, focusX, focusY) {
+    const v = this.view;
+    const cx = focusX == null ? v.x + v.w / 2 : focusX;
+    const cy = focusY == null ? v.y + v.h / 2 : focusY;
+    // 12x is about street-name legible; past 1 there is nothing more to show,
+    // because the extent already is the whole map.
+    const w = Math.min(this.home.w, Math.max(this.width / 12, v.w / factor));
+    const h = w * (this.home.h / this.home.w);
+    v.x = cx - (cx - v.x) * (w / v.w);
+    v.y = cy - (cy - v.y) * (h / v.h);
+    v.w = w; v.h = h;
+    this.clamp();
+    this.applyView();
+  }
+
+  clamp() {
+    const v = this.view;
+    v.x = Math.min(Math.max(0, v.x), Math.max(0, this.width - v.w));
+    v.y = Math.min(Math.max(0, v.y), Math.max(0, this.height - v.h));
+  }
+
+  reset() { this.view = { ...this.home }; this.applyView(); }
+
+  /** Frame a point at a useful working zoom — used by "near me". */
+  centreOn(lat, lng, span = 0.28) {
+    const w = this.home.w * span;
+    const h = w * (this.home.h / this.home.w);
+    this.view = { x: this.x(lng) - w / 2, y: this.y(lat) - h / 2, w, h };
+    this.clamp();
+    this.applyView();
+  }
+
+  wireGestures() {
+    let dragging = false, moved = 0, lastX = 0, lastY = 0;
+
+    this.svg.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      dragging = true; moved = 0;
+      lastX = event.clientX; lastY = event.clientY;
+      this.svg.setPointerCapture(event.pointerId);
+    });
+
+    this.svg.addEventListener('pointermove', (event) => {
+      if (!dragging) return;
+      const box = this.svg.getBoundingClientRect();
+      const scale = Math.min(box.width / this.view.w, box.height / this.view.h);
+      const dx = event.clientX - lastX, dy = event.clientY - lastY;
+      moved += Math.abs(dx) + Math.abs(dy);
+      this.view.x -= dx / scale;
+      this.view.y -= dy / scale;
+      lastX = event.clientX; lastY = event.clientY;
+      this.clamp();
+      this.svg.setAttribute('viewBox',
+        `${this.view.x.toFixed(1)} ${this.view.y.toFixed(1)} ${this.view.w.toFixed(1)} ${this.view.h.toFixed(1)}`);
+    });
+
+    const end = (event) => {
+      if (!dragging) return;
+      dragging = false;
+      try { this.svg.releasePointerCapture(event.pointerId); } catch (_) {}
+      // A drag must not also count as a click, or panning the report map
+      // drops a pin wherever your finger happened to stop.
+      this.suppressClick = moved > 6;
+      setTimeout(() => { this.suppressClick = false; }, 0);
+    };
+    this.svg.addEventListener('pointerup', end);
+    this.svg.addEventListener('pointercancel', end);
+
+    this.svg.addEventListener('wheel', (event) => {
+      event.preventDefault();
+      const point = this.viewPoint(event.clientX, event.clientY);
+      this.zoomTo(event.deltaY < 0 ? 1.25 : 1 / 1.25, point && point.px, point && point.py);
+    }, { passive: false });
+  }
+
+  /** Client coordinates to map coordinates, respecting the current view. */
+  viewPoint(clientX, clientY) {
+    const box = this.svg.getBoundingClientRect();
+    const v = this.view;
+    const scale = Math.min(box.width / v.w, box.height / v.h);
+    return {
+      px: v.x + (clientX - box.left - (box.width - v.w * scale) / 2) / scale,
+      py: v.y + (clientY - box.top - (box.height - v.h * scale) / 2) / scale,
+    };
+  }
+
+  /* ---- layers --------------------------------------------------------- */
+
+  setLayer(name, visible) {
+    const g = this.layers[name];
+    if (g) g.style.display = visible ? '' : 'none';
+    if (this.toggles && this.toggles[name]) {
+      this.toggles[name].setAttribute('aria-pressed', String(!!visible));
+    }
+  }
+
+  /**
+   * The layer panel.
+   *
+   * Built here rather than written into the HTML because the panel has to
+   * know which layers this particular map actually drew: offering to toggle a
+   * coastline that never loaded is worse than offering no control at all.
+   */
+  buildControls() {
+    const wrap = document.createElement('div');
+    wrap.className = 'mapctl';
+
+    const zoom = document.createElement('div');
+    zoom.className = 'mapzoom';
+    for (const [label, name, act] of [['+', 'Zoom in', () => this.zoomTo(1.6)],
+                                      ['−', 'Zoom out', () => this.zoomTo(1 / 1.6)],
+                                      ['⌂', 'Show the whole city', () => this.reset()]]) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = label; b.title = name;
+      b.setAttribute('aria-label', name);
+      b.addEventListener('click', act);
+      zoom.appendChild(b);
+    }
+    wrap.appendChild(zoom);
+
+    const panel = document.createElement('div');
+    panel.className = 'maplayers';
+    const heading = document.createElement('p');
+    heading.className = 'maplayers-h';
+    heading.textContent = 'Map layers';
+    panel.appendChild(heading);
+
+    this.toggles = {};
+    for (const [name, label, swatch] of [
+      ['zones', 'Tsunami zones', 'sw-zone'],
+      ['streets', 'Streets', 'sw-street'],
+      ['hubs', 'Emergency hubs', 'sw-hub'],
+      ['labels', 'Place names', 'sw-label'],
+    ]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'maplayer';
+      b.dataset.layerToggle = name;
+      b.setAttribute('aria-pressed', 'true');
+      const swatchEl = document.createElement('i');
+      swatchEl.className = swatch;
+      swatchEl.setAttribute('aria-hidden', 'true');
+      const text = document.createElement('span');
+      text.textContent = label;
+      b.append(swatchEl, text);
+      b.addEventListener('click', () => {
+        this.setLayer(name, b.getAttribute('aria-pressed') !== 'true');
+      });
+      panel.appendChild(b);
+      this.toggles[name] = b;
+    }
+    wrap.appendChild(panel);
+    this.el.appendChild(wrap);
+    this.el.classList.add('has-ctl');
+  }
+
+  /** Only offer to toggle layers that actually have something in them. */
+  syncControls() {
+    if (!this.toggles) return;
+    for (const [name, button] of Object.entries(this.toggles)) {
+      button.hidden = !this.layers[name] || !this.layers[name].childNodes.length;
+    }
   }
 
   path(geometry) {
@@ -251,7 +514,9 @@ class Map {
     const hubs = this.layers.hubs;
     zones.textContent = '';
     hubs.textContent = '';
+    this.drawLand(collection.land || []);
     this.drawStreets(collection.streets || []);
+    this.drawLabels(collection.labels || []);
 
     for (const feature of (collection.features || [])) {
       const props = feature.properties || {};
@@ -272,13 +537,67 @@ class Map {
         const el = document.createElementNS(SVG_NS, 'circle');
         el.setAttribute('cx', this.x(lng).toFixed(1));
         el.setAttribute('cy', this.y(lat).toFixed(1));
-        el.setAttribute('r', '2.6');
+        setRadius(el, 2.6);
         el.setAttribute('class', 'hub');
         const t = document.createElementNS(SVG_NS, 'title');
         t.textContent = `Emergency hub: ${props.name || 'unnamed'}${props.address ? ' — ' + props.address : ''}`;
         el.appendChild(t);
         hubs.appendChild(el);
       }
+    }
+  }
+
+  /**
+   * Land, so that everything else can be sea.
+   *
+   * OpenStreetMap stores the coast as a directed line rather than a polygon,
+   * so `tools/fetch_basemap.py` does the work of stitching it into closed
+   * land shapes and proves the result against ten known points before baking
+   * it. Here it is one path with `fill-rule: evenodd`, drawn under everything,
+   * with the map's own background showing through as water.
+   *
+   * This is the single change that makes the map legible at a glance. Without
+   * it Wellington is a grey street network on a grey field, and you cannot
+   * tell the harbour from the hills.
+   */
+  drawLand(polygons) {
+    const layer = this.layers.land;
+    layer.textContent = '';
+    if (!polygons.length) {
+      // No coastline baked: fall back to a flat land colour rather than
+      // leaving the whole map the colour of water, which would be a lie.
+      this.el.classList.add('no-coast');
+      return;
+    }
+    this.el.classList.remove('no-coast');
+    const d = polygons.map(ring => ring.map(([lng, lat], i) =>
+      `${i ? 'L' : 'M'}${this.x(lng).toFixed(1)} ${this.y(lat).toFixed(1)}`).join('') + 'Z').join('');
+    const el = document.createElementNS(SVG_NS, 'path');
+    el.setAttribute('d', d);
+    el.setAttribute('class', 'land');
+    el.setAttribute('fill-rule', 'evenodd');
+    layer.appendChild(el);
+  }
+
+  /**
+   * Suburb names.
+   *
+   * A street network with nothing named on it makes people identify their own
+   * area by its shape, which nobody does well under stress. Ranked so the
+   * smaller names drop out when the map is small, rather than overprinting.
+   */
+  drawLabels(places) {
+    const layer = this.layers.labels;
+    layer.textContent = '';
+    for (const place of places) {
+      const text = document.createElementNS(SVG_NS, 'text');
+      text.setAttribute('x', this.x(place.x).toFixed(1));
+      text.setAttribute('y', this.y(place.y).toFixed(1));
+      text.setAttribute('class', `place r${place.r}`);
+      text.dataset.fs = place.r === 0 ? 13 : place.r === 1 ? 10.5 : 9;
+      text.setAttribute('font-size', text.dataset.fs);
+      text.textContent = place.n;
+      layer.appendChild(text);
     }
   }
 
@@ -319,7 +638,7 @@ class Map {
       const circle = document.createElementNS(SVG_NS, 'circle');
       circle.setAttribute('cx', this.x(report.lng).toFixed(1));
       circle.setAttribute('cy', this.y(report.lat).toFixed(1));
-      circle.setAttribute('r', '6');
+      setRadius(circle, 6);
       circle.setAttribute('class', `pin p-${report.status || 'received'}`);
       const t = document.createElementNS(SVG_NS, 'title');
       t.textContent = `${report.title} — ${report.status_label || ''}`;
@@ -337,10 +656,10 @@ class Map {
     const x = this.x(lng), y = this.y(lat);
     const halo = document.createElementNS(SVG_NS, 'circle');
     halo.setAttribute('cx', x.toFixed(1)); halo.setAttribute('cy', y.toFixed(1));
-    halo.setAttribute('r', '13'); halo.setAttribute('class', 'pin-halo');
+    setRadius(halo, 13); halo.setAttribute('class', 'pin-halo');
     const dot = document.createElementNS(SVG_NS, 'circle');
     dot.setAttribute('cx', x.toFixed(1)); dot.setAttribute('cy', y.toFixed(1));
-    dot.setAttribute('r', '6.5'); dot.setAttribute('class', 'drop');
+    setRadius(dot, 6.5); dot.setAttribute('class', 'drop');
     layer.appendChild(halo);
     layer.appendChild(dot);
   }
@@ -833,10 +1152,11 @@ async function boot() {
   await loadChannels();
   await refreshBanner();
 
-  reportMap = new Map($('#map-report'), state.meta.extent);
-  opsMap = new Map($('#map-ops'), state.meta.extent);
+  reportMap = new MapView($('#map-report'), state.meta.extent);
+  opsMap = new MapView($('#map-ops'), state.meta.extent, { controls: true });
 
   reportMap.svg.addEventListener('click', event => {
+    if (reportMap.suppressClick) return;   // that was a pan, not a pick
     const point = reportMap.latlng(event.clientX, event.clientY);
     if (point) setLocation(point.lat, point.lng);
   });
@@ -850,11 +1170,12 @@ async function boot() {
     state.basemap = await api('/api/basemap');
     reportMap.drawBasemap(state.basemap);
     opsMap.drawBasemap(state.basemap);
+    opsMap.syncControls();
     fillPlaceSuggestions();
     drawNearRing(reportMap);
     // Maps created before this point need the backdrop applying now.
     for (const m of [liveMap, communityMap]) {
-      if (m && !m._drawn) { m.drawBasemap(state.basemap); m._drawn = true; }
+      if (m && !m._drawn) { m.drawBasemap(state.basemap); m.syncControls(); m._drawn = true; }
     }
     $('#attrib').textContent = state.basemap.attribution || '';
   } catch (_) {
@@ -1714,14 +2035,16 @@ function drawNearRing(map) {
   const ring = document.createElementNS(SVG_NS, 'circle');
   ring.setAttribute('cx', cx.toFixed(1));
   ring.setAttribute('cy', cy.toFixed(1));
-  ring.setAttribute('r', r.toFixed(1));
+  setRadius(ring, Number(r.toFixed(1)));
   ring.setAttribute('class', 'near-ring');
   const dot = document.createElementNS(SVG_NS, 'circle');
   dot.setAttribute('cx', cx.toFixed(1));
   dot.setAttribute('cy', cy.toFixed(1));
-  dot.setAttribute('r', '4');
+  setRadius(dot, 4);
   dot.setAttribute('class', 'near-dot');
   layer.append(ring, dot);
+  // Freshly drawn markers must inherit the current zoom.
+  if (map) map.rescale();
 }
 
 /* ── community map ───────────────────────────────────────────────────────
@@ -1751,8 +2074,9 @@ async function renderCommunity() {
   const c = state.community || {};
 
   if (!communityMap) {
-    communityMap = new Map($('#map-community'), state.meta.extent);
+    communityMap = new MapView($('#map-community'), state.meta.extent, { controls: true });
     communityMap.svg.addEventListener('click', event => {
+      if (communityMap.suppressClick) return;   // that was a pan, not a pick
       const point = communityMap.latlng(event.clientX, event.clientY);
       if (point) {
         state.draft.communityPoint = point;
@@ -1765,6 +2089,7 @@ async function renderCommunity() {
   }
   if (state.basemap && !communityMap._drawn) {
     communityMap.drawBasemap(state.basemap);
+    communityMap.syncControls();
     communityMap._drawn = true;
   }
   drawNearRing(communityMap);
@@ -1788,7 +2113,7 @@ function drawCommunityPins(c) {
     const el = document.createElementNS(SVG_NS, 'circle');
     el.setAttribute('cx', communityMap.x(item.lng).toFixed(1));
     el.setAttribute('cy', communityMap.y(item.lat).toFixed(1));
-    el.setAttribute('r', String(radius));
+    setRadius(el, radius);
     el.setAttribute('class', cls + (withinNear(item) ? '' : ' is-far'));
     const t = document.createElementNS(SVG_NS, 'title');
     t.textContent = label;
@@ -1808,6 +2133,8 @@ function drawCommunityPins(c) {
   for (const f of (c.feeds || [])) {
     add(f, 'feedpin', 5, `${f.title} — live feed`);
   }
+  // Freshly drawn markers must inherit the current zoom.
+  if (communityMap) communityMap.rescale();
 }
 
 function renderStacks(stacks) {
@@ -2088,7 +2415,7 @@ async function renderLive() {
   state.live = data;
 
   if (!liveMap) {
-    liveMap = new Map($('#map-live'), state.meta.extent);
+    liveMap = new MapView($('#map-live'), state.meta.extent, { controls: true });
   }
   // Draw the backdrop whenever it is available and has not been drawn yet.
   // Previously this only ran at map creation — and renderLive can run before
@@ -2096,6 +2423,7 @@ async function renderLive() {
   // rectangle with no coastline and no evacuation zones.
   if (state.basemap && !liveMap._drawn) {
     liveMap.drawBasemap(state.basemap);
+    liveMap.syncControls();
     liveMap._drawn = true;
   }
 
@@ -2136,7 +2464,7 @@ function drawLivePins(data) {
     const el = document.createElementNS(SVG_NS, 'circle');
     el.setAttribute('cx', liveMap.x(item.lng).toFixed(1));
     el.setAttribute('cy', liveMap.y(item.lat).toFixed(1));
-    el.setAttribute('r', String(radius));
+    setRadius(el, radius);
     el.setAttribute('class', cls + (withinNear(item) ? '' : ' is-far'));
     // Native title = hover. Click opens the full detail, because a tooltip
     // cannot be read on a phone and cannot be copied from.
@@ -2177,6 +2505,8 @@ function drawLivePins(data) {
           `Help needed: ${r.title} — ${r.likelihood_label}`, 'request');
     }
   }
+  // Freshly drawn markers must inherit the current zoom.
+  if (liveMap) liveMap.rescale();
 }
 
 /** One chronological feed across every type — the "what is going on" column. */
@@ -2503,7 +2833,7 @@ function drawRealtimePins(map) {
     const el = document.createElementNS(SVG_NS, 'circle');
     el.setAttribute('cx', map.x(item.lng).toFixed(1));
     el.setAttribute('cy', map.y(item.lat).toFixed(1));
-    el.setAttribute('r', '5.5');
+    setRadius(el, 5.5);
     el.setAttribute('class', cls + (withinNear(item) ? '' : ' is-far'));
     const t = document.createElementNS(SVG_NS, 'title');
     t.textContent = label;
@@ -2515,6 +2845,8 @@ function drawRealtimePins(map) {
   for (const g of (data.gauges || []).filter(x => x.fresh)) {
     add(g, 'realpin', `${g.title} — ${g.measurement} ${g.value}, ${g.age_hours}h ago`);
   }
+  // Freshly drawn markers must inherit the current zoom.
+  if (map) map.rescale();
 }
 
 /* ── traffic-light severity ──────────────────────────────────────────────
