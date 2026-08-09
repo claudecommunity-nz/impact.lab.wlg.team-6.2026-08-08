@@ -33,18 +33,53 @@ def _first_attr(dataset: str, lat: float, lng: float, field: str) -> str | None:
 
 
 def _tsunami_zone(lat: float, lng: float) -> str | None:
-    """Tsunami evacuation zone colour at this point (Red/Orange/Yellow)."""
-    return _first_attr("tsunami-evacuation-zones", lat, lng, "Zone_Class")
+    """Tsunami evacuation zone at this point.
+
+    Live layer fields (verified 2026-08-10): Col_Code is the zone colour
+    ("red"/"orange"/"yellow"), Evac_Zone the human description. The
+    pre-event guess of Zone_Class turned out to be a bare integer.
+    """
+    try:
+        rows = wcc_gis.features("tsunami-evacuation-zones", at=(lat, lng), limit=1)
+    except wcc_gis.GisError:
+        return None
+    if not rows:
+        return None
+    r = rows[0]
+    colour, zone = r.get("Col_Code"), r.get("Evac_Zone")
+    if colour and zone:
+        return f"{colour} ({zone})"
+    return colour or zone or (str(r["Zone_Class"]) if r.get("Zone_Class") is not None else None)
 
 
 def _liquefaction_risk(lat: float, lng: float) -> str | None:
-    """Liquefaction vulnerability description at this point."""
-    return _first_attr("liquefaction-vulnerability", lat, lng, "Category")
+    """Liquefaction vulnerability at this point.
+
+    The dataset id is liquefaction-regional with field "Liquefaction"
+    (verified live 2026-08-10; the pre-event id didn't exist).
+    """
+    return (_first_attr("liquefaction-regional", lat, lng, "Liquefaction")
+            or _first_attr("liquefaction-overlay", lat, lng, "Category"))
 
 
 def _flood_hazard(lat: float, lng: float) -> str | None:
-    """Flood hazard classification at this point."""
-    return _first_attr("flood-hazard-areas", lat, lng, "Hazard_Class")
+    """Flood/ponding hazard at this point.
+
+    flood-hazard-areas is a whole ArcGIS service, not a queryable layer
+    (verified 2026-08-10), so this asks the ponding-areas layer instead;
+    presence of a mapped ponding polygon is the signal.
+    """
+    try:
+        rows = wcc_gis.features("ponding-areas", at=(lat, lng), limit=1)
+    except wcc_gis.GisError:
+        return None
+    if not rows:
+        return None
+    r = rows[0]
+    for field in ("Hazard_Class", "Type", "Category", "Description"):
+        if r.get(field):
+            return str(r[field])
+    return "mapped ponding area"
 
 
 def _fault_zone(lat: float, lng: float, radius_m: int = 500) -> dict | None:
@@ -55,9 +90,10 @@ def _fault_zone(lat: float, lng: float, radius_m: int = 500) -> dict | None:
             return None
         r = rows[0]
         return {
-            "name": r.get("Name") or r.get("FaultName"),
+            # live layer publishes lowercase field names (verified 2026-08-10)
+            "name": r.get("name") or r.get("Name") or r.get("FaultName"),
             "distance_m": radius_m,  # upper bound — actual may be closer
-            "slip_rate": r.get("Slip_Rate") or r.get("SlipRate"),
+            "slip_rate": r.get("slip_rate") or r.get("Slip_Rate") or r.get("SlipRate"),
         }
     except wcc_gis.GisError:
         return None
@@ -119,9 +155,12 @@ def _nearest_emergency_hub(lat: float, lng: float, radius_m: int = 5000) -> dict
         if not rows:
             return None
         r = rows[0]
+        # live layer publishes uppercase field names (verified 2026-08-10)
+        address = ", ".join(p for p in (r.get("ADDRESS") or r.get("Address"),
+                                        r.get("SUBURB"), r.get("TOWN")) if p)
         return {
-            "name": r.get("Name") or r.get("HubName") or r.get("FACILITY"),
-            "address": r.get("Address") or r.get("LOCATION"),
+            "name": r.get("NAME") or r.get("Name") or r.get("HubName") or r.get("FACILITY"),
+            "address": address or r.get("LOCATION"),
             "lat": r.get("lat"),
             "lng": r.get("lng"),
         }

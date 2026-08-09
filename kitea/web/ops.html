@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kitea Ops: community reports operating picture</title>
+<link rel="stylesheet" href="/static/vendor/maplibre-gl.css">
+<link rel="stylesheet" href="/static/ops.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='5' fill='%23F2B705'/%3E%3Cpath d='M16 4a12 12 0 0 1 12 12' stroke='%232E8C7E' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Cpath d='M16 28A12 12 0 0 1 4 16' stroke='%232E8C7E' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<div class="lock" id="lock">
+  <div class="lock-card">
+    <svg width="52" height="52" viewBox="0 0 32 32" aria-hidden="true">
+      <circle cx="16" cy="16" r="5" fill="#F2B705"/>
+      <path d="M16 4a12 12 0 0 1 12 12" stroke="#2E8C7E" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <path d="M16 28A12 12 0 0 1 4 16" stroke="#2E8C7E" stroke-width="3" fill="none" stroke-linecap="round"/>
+    </svg>
+    <h1>Kitea Ops</h1>
+    <p>Council operating picture. Enter the duty access key.</p>
+    <form id="lock-form">
+      <input type="password" id="lock-key" autocomplete="current-password" placeholder="access key" aria-label="Ops access key">
+      <div class="lock-error" id="lock-error"></div>
+      <button type="submit">Open the operating picture</button>
+    </form>
+  </div>
+</div>
+
+<header class="topbar hidden" id="topbar">
+  <div class="brand">
+    <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true">
+      <circle cx="16" cy="16" r="5" fill="#F2B705"/>
+      <path d="M16 4a12 12 0 0 1 12 12" stroke="#2E8C7E" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <path d="M16 28A12 12 0 0 1 4 16" stroke="#2E8C7E" stroke-width="3" fill="none" stroke-linecap="round"/>
+    </svg>
+    <div>
+      <div class="brand-name">Kitea Ops</div>
+      <div class="brand-sub">Community reports · live</div>
+    </div>
+  </div>
+  <div class="stats" id="stats" aria-live="polite"></div>
+  <div class="top-right">
+    <div class="clock" id="clock">—</div>
+    <div class="clock-sub">Wellington time · <span id="sse-state">connecting…</span></div>
+  </div>
+</header>
+
+<div class="workspace hidden" id="workspace">
+  <aside class="queue">
+    <div class="queue-head">
+      <div class="queue-title">Incoming reports</div>
+      <div class="filters" id="filters" role="group" aria-label="Filter by status"></div>
+    </div>
+    <div class="queue-list" id="queue-list"></div>
+  </aside>
+
+  <div id="map">
+    <div class="layerbar" id="layerbar" role="group" aria-label="Map layers"></div>
+  </div>
+
+  <aside class="detail" id="detail">
+    <button class="detail-close" id="detail-close" aria-label="Close detail panel">✕ close</button>
+    <div class="detail-scroll" id="detail-scroll">
+      <div class="detail-empty" id="detail-empty">
+        Select a report from the queue or the map.<br><br>
+        Every status you tap is pushed instantly to the person who reported it.
+        One tap here saves one "any progress?" phone call there.
+      </div>
+      <div id="detail-body" class="hidden"></div>
+    </div>
+  </aside>
+</div>
+
+<div class="feedbar hidden" id="feedbar" aria-label="Live agency feeds"></div>
+
+<script src="/static/vendor/maplibre-gl.js"></script>
+<script src="/static/ops.js"></script>
+</body>
+</html>

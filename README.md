@@ -19,14 +19,63 @@ A prototype could allow residents, community groups or Community Emergency Hubs 
 
 ---
 
-## What we're building
+## What we built — Kitea
 
-One working prototype, demoed in four minutes at 16:30.
+**Kitea** ("seen") is the answer to Problem 02 as a standalone, self-hostable
+product: residents report local conditions in under a minute and watch the
+council act on them live; the council gets one operating picture of every
+report beside the real-time feeds it already watches. The commercial case,
+inclusion stance and pilot path are in [COMMERCIAL.md](COMMERCIAL.md).
 
-Each team's module is meant to slot into a shared **common operating picture** —
-a live map of emergency signals that the ten prototypes feed together. Aim for
-something that can be pointed at a map, a feed or an API, rather than a
-closed-off demo.
+- **Resident page** (`/`): category chips, map pin or GPS, optional photo,
+  no login. Returns a reference code (e.g. `WGN-A4UD`) and a tracking page
+  that pushes `received → reviewing → responding → resolved` live over SSE.
+  The moment a pin is dropped, the page shows what the council's own hazard
+  maps say about that spot, and the nearest Community Emergency Hub.
+- **Ops dashboard** (`/ops`, access-key gated): live map + triage queue,
+  similar reports grouped into situations, one-tap status buttons that are
+  simultaneously the public acknowledgment, per-report hazard context
+  (tsunami zone, ponding, liquefaction, fault, NZDep decile, nearest live
+  gauge), and a feed-health strip that shows the age of every data source.
+- **Live agency feeds**, proxied and cached server-side: GWRC Hilltop river
+  and rain telemetry, Waka Kotahi delays/closures and cameras, GeoNet felt
+  quakes, NEMA electricity outages, MetService CAP warnings (with polygons
+  on the map), and WREMO Community Emergency Hubs.
+
+### Run it
+
+```bash
+python3 -m kitea
+```
+
+Zero dependencies beyond Python 3.10+. The ops access key comes from
+`KITEA_OPS_KEY` (a random one is generated and printed if unset). Residents:
+`http://127.0.0.1:8146/` — ops: `http://127.0.0.1:8146/ops`.
+
+Seed a believable demo scenario against a running server:
+
+```bash
+KITEA_OPS_KEY=<key> python3 scripts/seed_demo.py http://127.0.0.1:8146
+```
+
+Tests: `python3 -m unittest discover tests`.
+
+### Repo layout
+
+| Path | What |
+|---|---|
+| `kitea/` | the product: stdlib HTTP server, SQLite store, feed proxies, both UIs |
+| `enrichment/` | hazard-context lookups over `wcc_gis` (field names verified live) |
+| `wcc_gis.py`, `catalogue.json` | the event's GIS SDK, unchanged |
+| `reference/`, `loader-sketches/`, `report_status_loader.py` | pre-event design kit, kept as the record of how the design evolved |
+| `tests/`, `scripts/` | API lifecycle tests, demo seeder |
+
+## The event format (for context)
+
+Each team's module was meant to slot into a shared **common operating
+picture** — a live map of emergency signals fed by all ten prototypes. Kitea
+keeps that composability on its roadmap: an outbound GeoJSON/CAP feed of
+reports rather than a closed-off demo.
 
 Two teams work each problem statement independently. That's deliberate: two
 honest attempts at the same problem tell WCC more than one.
