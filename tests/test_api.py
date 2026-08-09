@@ -75,7 +75,7 @@ class TestKitea(unittest.TestCase):
         })
         self.assertEqual(status, 201)
         ref = rep["ref"]
-        self.assertRegex(ref, r"^WGN-[A-Z2-9]{4,6}$")
+        self.assertRegex(ref, r"^WGN-[A-Z2-9]{8}$")
         # received fires automatically, no human involved
         self.assertEqual(rep["status"], "received")
         self.assertEqual(rep["history"][0]["status"], "received")
@@ -108,9 +108,16 @@ class TestKitea(unittest.TestCase):
             self.assertEqual(status, 400, bad)
             self.assertIn("error", body)
 
-    def test_unknown_ref_404(self):
+    def test_unknown_ref_404_and_guessing_throttled(self):
         status, _ = _request("GET", "/api/reports/WGN-ZZZZ9")
         self.assertEqual(status, 404)
+        # the ref code is the credential; repeated misses must hit a wall
+        last = 404
+        for _ in range(35):
+            last, _ = _request("GET", "/api/reports/WGN-ZZZZ9")
+            if last == 429:
+                break
+        self.assertEqual(last, 429)
 
     def test_bad_status_rejected(self):
         _, rep = _request("POST", "/api/reports",

@@ -52,12 +52,23 @@ _IMAGE_MAGIC = (
     (b"RIFF", ".webp"),  # RIFF....WEBP checked further below
 )
 
-_REF_RE = re.compile(r"^[A-Z]{2,5}-[A-Z2-9]{3,8}$")
+_REF_RE = re.compile(r"^[A-Z]{2,5}-[A-Z2-9]{3,10}$")
+_LOOKUP_MISS_LIMIT = 30              # failed ref lookups per IP per hour
 
 OPS_KEY = os.environ.get("KITEA_OPS_KEY") or secrets.token_urlsafe(9)
 
 _submits: dict[str, deque] = defaultdict(deque)
 _submits_lock = threading.Lock()
+_lookup_misses: dict[str, deque] = defaultdict(deque)
+_misses_lock = threading.Lock()
+
+
+def _miss_window(ip: str) -> deque:
+    now = time.monotonic()
+    window = _lookup_misses[ip]
+    while window and now - window[0] > 3600:
+        window.popleft()
+    return window
 
 
 # ---------------------------------------------------------------------------
@@ -256,8 +267,17 @@ class Handler(BaseHTTPRequestHandler):
                     {"reports": store.list_reports(limit=limit, private=False)})
             m = re.fullmatch(r"/api/reports/([A-Z0-9-]{4,16})", path)
             if m:
+                # The ref code is the credential, so failed lookups are
+                # guessing attempts: throttle them per client.
+                ip = self._client_ip()
+                with _misses_lock:
+                    if len(_miss_window(ip)) >= _LOOKUP_MISS_LIMIT:
+                        return self._error(429, "too many failed lookups; "
+                                                "please wait before retrying")
                 rep = store.reporter_view(m.group(1))
                 if rep is None:
+                    with _misses_lock:
+                        _miss_window(ip).append(time.monotonic())
                     return self._error(404, "no report with that reference code")
                 return self._send_json(rep)
             m = re.fullmatch(r"/api/feeds/(\w{1,32})", path)

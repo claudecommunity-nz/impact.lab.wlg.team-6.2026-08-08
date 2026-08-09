@@ -179,7 +179,7 @@ async function showHazardHint(lat, lng) {
       chips.append(c);
     };
     if (hz.tsunami_zone) add(`Tsunami evacuation zone: ${hz.tsunami_zone}`, true);
-    if (hz.flood_hazard) add(`Mapped ponding/flood area: ${hz.flood_hazard}`, true);
+    if (hz.flood_hazard) add(`Flood hazard (1% AEP): ${hz.flood_hazard}`, true);
     if (hz.liquefaction_risk) add(`Liquefaction: ${hz.liquefaction_risk}`, false);
     if (hz.fault_zone && hz.fault_zone.name) add(`Near ${hz.fault_zone.name}`, false);
     if (hz.nearest_emergency_hub && hz.nearest_emergency_hub.name)

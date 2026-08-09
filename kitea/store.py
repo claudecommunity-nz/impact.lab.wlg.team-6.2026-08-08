@@ -99,13 +99,16 @@ def _now() -> str:
 
 
 def _new_ref(db: sqlite3.Connection) -> str:
-    for length in (4, 5, 6):
-        for _ in range(20):
-            code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(length))
-            ref = f"{CODE_PREFIX}-{code}"
-            row = db.execute("SELECT 1 FROM reports WHERE ref=?", (ref,)).fetchone()
-            if row is None:
-                return ref
+    # The code is the reporter's only credential, so it needs enough entropy
+    # to resist enumeration: 8 chars over a 31-char alphabet is ~40 bits
+    # (8.5e11 combinations) while staying readable over the phone. The
+    # server additionally throttles failed lookups per client.
+    for _ in range(50):
+        code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(8))
+        ref = f"{CODE_PREFIX}-{code}"
+        row = db.execute("SELECT 1 FROM reports WHERE ref=?", (ref,)).fetchone()
+        if row is None:
+            return ref
     raise RuntimeError("could not allocate a reference code")
 
 

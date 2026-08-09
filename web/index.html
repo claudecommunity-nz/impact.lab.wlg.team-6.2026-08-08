@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Impact Hub Wellington 2026 · Team 6 — Community ↔ WCC</title>
+<meta name="description" content="Report local conditions to Wellington City Council and see what happens to your report. Impact Lab Wellington, Team 6, Problem 02.">
+<meta name="color-scheme" content="light dark">
+<!-- Inline data URI, not a file: keeps the app to three assets and avoids a
+     404 on every page load. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b5cd5'/%3E%3Cpath d='M9 12h14M9 17h10' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3Ccircle cx='22' cy='21' r='3.4' fill='%234cc38a'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"></span>
+    <div>
+      <strong>Community &harr; WCC</strong>
+      <span class="sub">Impact Hub Wellington 2026 · Team 6</span>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab g-view is-active" data-view="live" role="tab" id="tab-live" aria-controls="view-live">Live map</button>
+    <button class="tab g-mine" data-view="report" role="tab" id="tab-report" aria-controls="view-report">Report</button>
+    <button class="tab g-mine" data-view="mine" role="tab" id="tab-mine" aria-controls="view-mine">My reports <span class="pill" id="mine-count" hidden></span></button>
+    <button class="tab g-comm" data-view="news" role="tab" id="tab-news" aria-controls="view-news">Updates</button>
+    <button class="tab g-comm" data-view="board" role="tab" id="tab-board" aria-controls="view-board">Board</button>
+    <button class="tab g-comm" data-view="community" role="tab" id="tab-community" aria-controls="view-community">Community</button>
+    <button class="tab g-help" data-view="help" role="tab" id="tab-help" aria-controls="view-help">Help</button>
+    <button class="tab g-ops" data-view="ops" role="tab" id="tab-ops" aria-controls="view-ops">Queue</button>
+    <button class="tab g-ops" data-view="wall" role="tab" id="tab-wall" aria-controls="view-wall">Comms hub</button>
+    <button class="tab g-ops" data-view="cards" role="tab" id="tab-cards" aria-controls="view-cards">Cards</button>
+  </nav>
+  <div class="whoarea">
+    <span class="rolebadge" id="role-badge" hidden></span>
+    <button class="btn ghost compact" id="signin-btn">Sign in with a card</button>
+    <button class="btn ghost compact" id="signout-btn" hidden>Sign out</button>
+  </div>
+</header>
+
+<!-- Redeem a printed card. No password, no email: the code on the card is the
+     whole credential, which is what makes it work with no connectivity to an
+     identity provider. -->
+<dialog id="signin-dialog">
+  <form method="dialog" id="signin-form">
+    <h2>Sign in with your card</h2>
+    <p class="hint">
+      Type the code printed on your access card. It works with no email, no
+      text message and no internet — only this server.
+    </p>
+    <label>
+      <span>Card code</span>
+      <input id="card-code" placeholder="WCC-XXXX-XXXX-XXXX" maxlength="24"
+             autocomplete="off" spellcheck="false">
+    </label>
+    <p class="error" id="signin-error" hidden></p>
+
+    <div id="demo-cards" hidden>
+      <p class="hint" style="margin-bottom:6px">
+        <strong>Trying this out?</strong> These demo cards are published in the
+        repo. Tap one to sign straight in.
+      </p>
+      <div class="chips" id="demo-card-list"></div>
+    </div>
+
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn ghost compact" value="cancel" type="submit">Cancel</button>
+      <button class="btn primary compact" id="signin-go" type="button">Sign in</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Important comms banner. Officials publish one line; it appears at the top
+     of every surface at once. Hidden until there is one. -->
+<div class="commsbanner" id="comms-banner" role="alert" aria-live="assertive" hidden>
+  <span class="cb-tag" id="cb-tag"></span>
+  <span class="cb-text" id="cb-text"></span>
+  <span class="cb-meta" id="cb-meta"></span>
+</div>
+
+<p class="disclaimer" role="note">
+  <strong>Prototype.</strong> Built in a day for Impact Lab Wellington. Not a live council service.
+  Map layers are hazard <em>planning</em> data, not live emergency information.
+  <strong>In an emergency, call 111.</strong>
+</p>
+
+<!-- Near-me filter. The coordinates are used in this browser only: filtering
+     happens client-side against data the page already has, and nothing about
+     where you are is ever sent to the server. -->
+<div class="nearbar" id="nearbar">
+  <span class="nb-label">Show me what's happening</span>
+  <button class="btn ghost compact" id="near-locate">Near me</button>
+  <form id="near-form" class="nb-form">
+    <input id="near-address" list="near-places" maxlength="80"
+           placeholder="or type a street or suburb" autocomplete="off">
+    <datalist id="near-places"></datalist>
+  </form>
+  <div class="chips" id="near-radius"></div>
+  <span class="nb-state" id="near-state">Whole city</span>
+  <button class="btn ghost compact" id="near-clear" hidden>Show everywhere</button>
+</div>
+
+<main id="main">
+
+  <!-- ── Live map: one page, everything happening ───────────── -->
+  <section class="view is-active" id="view-live" role="tabpanel" tabindex="0" aria-labelledby="tab-live">
+    <div class="split live">
+      <div class="mapwrap card">
+        <div class="maphead">
+          <h1>Wellington right now</h1>
+          <span class="counter" id="live-counter"></span>
+        </div>
+        <div class="layers" id="live-layers"></div>
+        <p class="realnote" id="real-note" hidden></p>
+        <div id="map-live" class="map tall"></div>
+        <div class="mapinfo" id="map-info" hidden aria-live="polite"></div>
+        <p class="attrib">
+          Everything on one map: what people reported, what they photographed,
+          what they are asking for, what they can offer, and what WCC has
+          confirmed. Bigger circles mean more people saw the same thing.
+        </p>
+      </div>
+
+      <div class="card scroller">
+        <h2>Happening now</h2>
+        <p class="hint" id="live-scope">Newest first, across the whole city.</p>
+        <div id="live-feed" class="stack" aria-live="polite" aria-relevant="additions"></div>
+      </div>
+    </div>
+
+    <div class="card adapt" id="adapt-panel" hidden>
+      <div class="adapt-head">
+        <h2>Climate &amp; equity signal</h2>
+        <span class="tag t-private" id="adapt-sample"></span>
+      </div>
+      <p class="hint" id="adapt-caveat"></p>
+      <div id="adapt-findings" class="stack"></div>
+      <p class="attrib" id="adapt-sources"></p>
+    </div>
+
+    <div class="split live-forms">
+      <form class="card" id="help-form">
+        <h2>Ask for help</h2>
+        <p class="hint">
+          Different from reporting a problem — this is you or someone near you
+          needing something. It goes to WCC, and they answer two things: whether
+          someone is coming, and roughly when.
+        </p>
+        <fieldset><legend>What's needed</legend><div class="chips" id="need-kinds"></div></fieldset>
+        <fieldset><legend>How urgent</legend><div class="chips" id="need-urgency"></div></fieldset>
+        <textarea id="help-detail" rows="3" maxlength="1000"
+                  placeholder="What is needed, and anything that would stop someone reaching you"></textarea>
+        <div class="row">
+          <input id="help-place" maxlength="120" placeholder="Street or suburb">
+          <input id="help-people" type="number" min="1" max="99" placeholder="People">
+        </div>
+        <input id="help-contact" maxlength="120" placeholder="How to reach you (officials only)">
+        <fieldset><legend>Who can see this</legend><div class="chips" id="help-visibility"></div></fieldset>
+        <button class="btn primary" type="submit">Send request</button>
+        <p class="error" id="help-error" hidden></p>
+        <p class="ok" id="help-ok" hidden></p>
+      </form>
+
+      <form class="card" id="issue-form" hidden>
+        <h2>Publish an issue</h2>
+        <p class="hint">
+          WCC confirming something itself, so the map shows what the council
+          knows as well as what the public reported.
+        </p>
+        <input id="issue-title" maxlength="200" placeholder="e.g. Hutt Road southbound lane closed">
+        <textarea id="issue-detail" rows="3" maxlength="1000" placeholder="What people need to know"></textarea>
+        <input id="issue-place" maxlength="120" placeholder="Street or suburb">
+        <fieldset><legend>State</legend><div class="chips" id="issue-states"></div></fieldset>
+        <button class="btn primary" type="submit">Publish</button>
+        <p class="error" id="issue-error" hidden></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ── Report ─────────────────────────────────────────────── -->
+  <section class="view" id="view-report" role="tabpanel" tabindex="0" aria-labelledby="tab-report">
+    <div class="split">
+      <form id="report-form" class="card" autocomplete="off">
+        <h1>What's happening?</h1>
+
+        <fieldset>
+          <legend>Type of issue</legend>
+          <div class="chips" id="issue-types"></div>
+        </fieldset>
+
+        <label>
+          <span>In one line</span>
+          <input name="title" maxlength="200" required
+                 placeholder="Water over the road on Hutt Road">
+        </label>
+
+        <label>
+          <span>Any detail that helps <em>optional</em></span>
+          <textarea name="description" rows="3" maxlength="2000"
+                    placeholder="Southbound lane is under water. Cars are turning around."></textarea>
+        </label>
+
+        <fieldset>
+          <legend>How bad is it?</legend>
+          <div class="chips" id="severities"></div>
+        </fieldset>
+
+        <fieldset class="location">
+          <legend>Where</legend>
+          <p class="hint">Tap the map, or use your location. A rough pin is far better than none.</p>
+          <div class="row">
+            <button type="button" class="btn ghost" id="locate">Use my location</button>
+            <output id="location-readout" class="readout">No location set</output>
+          </div>
+          <label>
+            <span>Place name <em>optional</em></span>
+            <input name="place_name" maxlength="200" placeholder="Ngauranga">
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>You are reporting as</legend>
+          <div class="chips" id="reporter-kinds"></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>A photo <em>optional</em></legend>
+          <p class="hint">
+            If the photo still has its location, we read it to place the pin,
+            show you what we read, then strip the metadata from the copy we publish.
+          </p>
+          <input type="file" id="report-photo" accept="image/jpeg,image/png"
+                 aria-label="Choose a photo to attach">
+          <p class="exifreadout" id="report-photo-note" hidden></p>
+          <details class="hosts">
+            <summary>No luck uploading? Paste a link instead</summary>
+            <p class="hint">
+              Upload it to one of these and paste the link — all free, no account
+              needed, and they do not require you to sign in to view:
+            </p>
+            <ul class="links">
+              <li><a href="https://postimages.org/" target="_blank" rel="noopener noreferrer">postimages.org</a> — no account, direct links</li>
+              <li><a href="https://imgbb.com/" target="_blank" rel="noopener noreferrer">imgbb.com</a> — no account, set an expiry if you want</li>
+              <li><a href="https://catbox.moe/" target="_blank" rel="noopener noreferrer">catbox.moe</a> — no account, permanent</li>
+            </ul>
+            <p class="hint">
+              A link you paste is <strong>not</strong> stripped of metadata by us —
+              that is on the host. Prefer uploading here if you can.
+            </p>
+            <input name="media_url" type="url" maxlength="2000"
+                   placeholder="https://..." aria-label="Link to a photo">
+          </details>
+        </fieldset>
+
+        <button type="submit" class="btn primary" id="submit-btn">Send to WCC</button>
+        <p class="formnote">
+          No account, no login. You'll get a reference code — that code is how you check back.
+        </p>
+        <p class="error" id="report-error" hidden></p>
+      </form>
+
+      <div class="mapwrap card">
+        <div class="maphead">
+          <h2>Wellington</h2>
+          <div class="legend" id="legend"></div>
+        </div>
+        <div id="map-report" class="map"></div>
+        <p class="attrib" id="attrib"></p>
+      </div>
+    </div>
+
+    <!-- success panel -->
+    <div class="receipt card" id="receipt" hidden>
+      <div class="tick" aria-hidden="true">✓</div>
+      <h2>Received by Wellington City Council</h2>
+      <p class="lede">Your reference code</p>
+      <p class="ref" id="receipt-ref"></p>
+      <p class="lede">Write it down or screenshot it. It's saved on this device too.</p>
+      <div id="receipt-context" class="context"></div>
+      <div class="row">
+        <button class="btn primary" id="receipt-track">Track this report</button>
+        <button class="btn ghost" id="receipt-again">Report something else</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── My reports ─────────────────────────────────────────── -->
+  <section class="view" id="view-mine" role="tabpanel" tabindex="0" aria-labelledby="tab-mine">
+    <div class="card">
+      <h1>My reports</h1>
+      <p class="hint">
+        Updates appear here on their own. You don't need to refresh, and you don't need to ring anyone.
+      </p>
+      <form class="row lookup" id="lookup-form">
+        <label class="grow">
+          <span>Have a code from another device?</span>
+          <input name="reference" placeholder="WLG-XXXXX" maxlength="9">
+        </label>
+        <button class="btn ghost" type="submit">Look it up</button>
+      </form>
+      <p class="error" id="lookup-error" hidden></p>
+    </div>
+    <div id="mine-list" class="stack" aria-live="polite"></div>
+  </section>
+
+  <!-- ── News: periodic updates, tagged by agency ───────────── -->
+  <section class="view" id="view-news" role="tabpanel" tabindex="0" aria-labelledby="tab-news">
+    <div class="card">
+      <h1>Updates</h1>
+      <p class="hint">
+        Periodic updates from the agencies working the event, newest first.
+        Each one is tagged with who said it and what it is about, so you can
+        filter to the source you trust rather than reading everything.
+      </p>
+      <div class="filters">
+        <div class="chips" id="news-categories"></div>
+        <div class="chips" id="news-agencies"></div>
+      </div>
+    </div>
+
+    <form class="card" id="news-form" hidden>
+      <h2>Post an update</h2>
+      <p class="hint">Published under an agency's name to the whole city.</p>
+      <div class="chips" id="news-post-agency"></div>
+      <div class="chips" id="news-post-category"></div>
+      <input id="news-title" maxlength="200" placeholder="Headline">
+      <textarea id="news-body" rows="3" maxlength="2000" placeholder="What people need to know"></textarea>
+      <div class="row">
+        <input id="news-area" maxlength="120" placeholder="Area (optional)">
+        <input id="news-link" maxlength="500" placeholder="Link (optional)">
+      </div>
+      <button class="btn primary compact" type="submit">Publish update</button>
+      <p class="error" id="news-error" hidden></p>
+    </form>
+
+    <div id="news-list" class="stack"></div>
+  </section>
+
+  <!-- ── Help, guidelines and rules ─────────────────────────── -->
+  <section class="view" id="view-help" role="tabpanel" tabindex="0" aria-labelledby="tab-help">
+    <div class="split help">
+      <nav class="card helpnav">
+        <h2>On this page</h2>
+        <a href="#help-start">Getting started</a>
+        <a href="#help-report">Reporting vs asking for help</a>
+        <a href="#help-rules">Community guidelines</a>
+        <a href="#help-mod">How moderation works</a>
+        <a href="#help-privacy">Your privacy</a>
+        <a href="#help-cards">Access cards</a>
+        <a href="#help-faq">Common questions</a>
+        <a href="#help-data">Live data &amp; sources</a>
+      </nav>
+
+      <div class="card helpdoc">
+        <h1>How this works</h1>
+        <p class="lede">
+          A two-way channel between Wellington communities and the Council.
+          You tell WCC what you are seeing; WCC tells you what is happening
+          about it. Everything below is how to use it and what the rules are.
+        </p>
+
+        <h2 id="help-start">Getting started</h2>
+        <p>
+          There is no account and no password. Open the page and you can
+          read everything public and post straight away. If you want your
+          name on your messages, set it under <em>Message board → Posting
+          as</em> — it is only a label, and you can stay anonymous.
+        </p>
+        <ol>
+          <li><strong>Live map</strong> — everything happening right now.
+              Use <em>Near me</em> or type your street to narrow it down.</li>
+          <li><strong>Report an issue</strong> — something is wrong out there.
+              You get a reference code; keep it.</li>
+          <li><strong>My reports</strong> — what happened to what you sent.
+              It updates itself; you never need to ring to ask.</li>
+          <li><strong>Ask for help</strong> — on the Live map, if you or
+              someone near you needs something.</li>
+        </ol>
+
+        <h2 id="help-report">Reporting an issue vs asking for help</h2>
+        <p>
+          These are different and it matters which you use.
+        </p>
+        <ul>
+          <li><strong>Report an issue</strong> — a condition in the world.
+              Water over a road, a slip, a tree down, no power on a street.
+              It goes on the map for everyone.</li>
+          <li><strong>Ask for help</strong> — a person needs something.
+              Getting out, a welfare check, water, medical help. It goes to
+              WCC and responders, and by default <em>only</em> to them.</li>
+        </ul>
+        <p>
+          <strong>Neither is an emergency service.</strong> If someone is in
+          danger right now, call <strong>111</strong>. This is a prototype and
+          nobody is watching it around the clock.
+        </p>
+
+        <h2 id="help-rules">Community guidelines</h2>
+        <p>Short, and all of them are about being useful to a neighbour.</p>
+        <ol>
+          <li><strong>Say what you saw, where.</strong> "Water over the road
+              on Hutt Rd near the onramp, ankle deep" is actionable.
+              "FLOODING!!!" is not, and the form will ask you for more.</li>
+          <li><strong>Do not report what you have not seen.</strong> Passing on
+              a rumour as a sighting sends a crew to the wrong street.</li>
+          <li><strong>Do not post other people's details.</strong> If a
+              message is about an identifiable person — an address, a health
+              condition, a name — mark it <em>Only officials</em>.</li>
+          <li><strong>One message per thing.</strong> Repeating yourself does
+              not make it more urgent; it makes the board harder to read.
+              Several people reporting the <em>same</em> thing is fine and
+              useful — that is corroboration, and it stacks.</li>
+          <li><strong>Keep it civil.</strong> Complaints about the Council are
+              legitimate, but an emergency board during an event is not where
+              they help anyone.</li>
+          <li><strong>Do not impersonate anyone.</strong> Officials are badged
+              with a verified access card. Claiming to be one is the one thing
+              here that could get somebody hurt.</li>
+        </ol>
+
+        <h2 id="help-mod">How moderation works</h2>
+        <p>
+          Photos, offers of help and live feeds from unverified residents wait
+          for a moderator before the public sees them. That is because this
+          map looks like it comes from the Council, and a wrong address for
+          "water here" sends people to the wrong street.
+        </p>
+        <p>
+          <strong>Nothing is ever deleted.</strong> When a moderator withholds
+          a message, it leaves the public feed and a visible marker stays where
+          it was — so a gap in a conversation is always accounted for, and
+          moderation can never look like silent censorship. The original and
+          the reason stay visible to officials.
+        </p>
+        <p>
+          Moderators are either card holders, or people the board has noticed
+          are consistently useful. That second route is scored on countable
+          things — reports the Council acted on, substantive posts, time active
+          — and <em>any</em> message of yours that gets flagged rules you out.
+        </p>
+
+        <h2 id="help-privacy">Your privacy</h2>
+        <ul>
+          <li><strong>Your location stays in your browser.</strong> The
+              <em>Near me</em> filter and the address lookup run on your
+              device against data shipped with the page. Nothing about where
+              you are is sent to us.</li>
+          <li><strong>Photos are stripped.</strong> If a photo carries GPS we
+              use it to place the pin, show you what we read, and then remove
+              all metadata from the copy we publish.</li>
+          <li><strong>Contact details are never public.</strong> A phone
+              number on an offer or a request goes to officials only, even
+              when the rest of the item is public.</li>
+          <li><strong>Requests for help default to private.</strong> You can
+              choose to share one with neighbours — often the fastest
+              responder is two streets away — but you have to choose it.</li>
+        </ul>
+
+        <h2 id="help-cards">Access cards</h2>
+        <p>
+          Officials sign in with a code printed on a card they carry. No email,
+          no text message, no login service — during an emergency those are
+          exactly what fails. Type the code, or tap one in the sign-in dialog.
+        </p>
+        <p>
+          A card only ever grants cards <em>below</em> its own level, so
+          handing one out can never create an equal. Lost a card? Tell whoever
+          issued it and it is cancelled immediately, along with any session
+          opened using it.
+        </p>
+
+        <h2 id="help-faq">Common questions</h2>
+        <dl class="faq">
+          <dt>I reported something. How do I find out what happened?</dt>
+          <dd>Open <strong>My reports</strong>. It updates on its own the
+              moment a staff member changes the status — you do not need to
+              refresh, and you do not need to ring the call centre.</dd>
+
+          <dt>I lost my reference code.</dt>
+          <dd>It is saved on the device you reported from. From another
+              device, paste it into <em>My reports → Have a code from another
+              device</em>. If it is genuinely gone, report the issue again —
+              duplicates are not a problem here, they stack as corroboration.</dd>
+
+          <dt>Why was my message rejected?</dt>
+          <dd>Almost always because it was too short to act on. The form tells
+              you exactly what is missing. It is not a judgement about you —
+              the same rule applies to Council staff.</dd>
+
+          <dt>Someone posted something wrong. What do I do?</dt>
+          <dd>A moderator can withhold it. Post on the same board saying what
+              you know instead — a correction from a neighbour who was there
+              is usually faster and more trusted than moderation.</dd>
+
+          <dt>Can I see what is happening on just my street?</dt>
+          <dd>Yes. <em>Near me</em>, or type your street, then pick a radius
+              from 1 to 20 km. The map draws the radius so you can see what
+              you are excluding.</dd>
+
+          <dt>Does this work if the internet is down?</dt>
+          <dd>Partly, and deliberately. The map and the street index are
+              stored in the page, so it keeps working on a local network with
+              no connection to the outside world. Access cards work the same
+              way. Sending a report still needs to reach the server.</dd>
+
+          <dt>Is this an official Council service?</dt>
+          <dd>No. It is a prototype built in one day at Impact Lab Wellington.
+              In an emergency, call <strong>111</strong>.</dd>
+        </dl>
+
+        <h2 id="help-data">Live data &amp; sources</h2>
+        <p>
+          The map layers come from the datasets Wellington City Council
+          Emergency Management published for this event. They are
+          <strong>hazard-planning data, not live emergency information</strong>.
+        </p>
+        <ul class="links" id="help-links"></ul>
+        <p class="hint">
+          Reading these from a script? Send a <code>User-Agent</code> header.
+          Cloudflare rejects the bare <code>Python-urllib</code> default with a
+          1010 — every other client is fine, and naming your module means a
+          council can tell who is calling.
+        </p>
+        <p class="attrib">
+          Data belongs to its publishers — WCC, Greater Wellington, GNS
+          Science, NIWA, Wellington Water, MBIE, NZTA, MetService. Licence
+          terms vary per dataset; check before republishing anything derived
+          from them.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Message board (public) ─────────────────────────────── -->
+  <section class="view" id="view-board" role="tabpanel" tabindex="0" aria-labelledby="tab-board">
+    <div class="split boards">
+      <div class="card">
+        <h1>Message board</h1>
+        <p class="hint">
+          A place for everyone. Officials are badged; everyone else is a neighbour.
+          Pick where you're posting.
+        </p>
+        <div class="channels" id="board-channels"></div>
+        <div class="whoami" id="account-box"></div>
+        <div class="whoami">
+          <label>
+            <span>Posting as</span>
+            <input id="display-name" maxlength="80" placeholder="Your name or a nickname">
+          </label>
+          <p class="hint">No account. This is just what shows next to your messages.</p>
+        </div>
+      </div>
+
+      <div class="card chatpane">
+        <div class="chathead">
+          <h2 id="board-title">Wellington — everyone</h2>
+          <span class="counter" id="board-count"></span>
+        </div>
+        <div class="messages" id="board-messages"></div>
+        <form class="composer" id="board-composer">
+          <textarea id="board-body" rows="2" maxlength="2000"
+                    placeholder="Say what you're seeing, or ask the neighbourhood…"></textarea>
+          <div class="composer-row">
+            <div class="chips" id="board-visibility"></div>
+            <button class="btn primary compact" type="submit">Post</button>
+          </div>
+          <p class="hint" id="visibility-hint"></p>
+          <p class="error" id="board-error" hidden></p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Agency wall (officials) ────────────────────────────── -->
+  <section class="view" id="view-wall" role="tabpanel" tabindex="0" aria-labelledby="tab-wall">
+    <div id="wall-locked" class="card locked">
+      <h1>Communications hub</h1>
+      <p class="hint">
+        Eight agency channels on one screen — WCC Emergency Management, WREMO,
+        Wellington Water, FENZ, Police, Greater Wellington, Free Ambulance and
+        Red Cross — plus the important-comms banner that pushes one line to
+        every public screen at once.
+      </p>
+      <p class="hint">
+        <strong>These channels are for agencies talking to each other, so the
+        public are not in them.</strong> Sign in with an access card to open it —
+        the demo cards are published in the repo and listed in the sign-in
+        dialog, one tap.
+      </p>
+      <button class="btn primary compact" id="wall-signin">Sign in with a card</button>
+    </div>
+
+    <div id="wall-panel" hidden>
+    <div class="card bannerctl">
+      <h1>Important comms</h1>
+      <p class="hint">
+        One line, pushed to the top of every public screen at once. Clearing it is
+        another entry in the log, not a deletion — you can always say what was
+        showing and for how long.
+      </p>
+      <form class="row" id="banner-form">
+        <div class="chips" id="banner-levels"></div>
+        <input id="banner-text" class="grow" maxlength="500"
+               placeholder="e.g. Orange heavy rain warning until 8pm…">
+        <button class="btn primary compact" type="submit">Publish</button>
+        <button class="btn ghost compact" type="button" id="banner-clear">Clear</button>
+      </form>
+    </div>
+
+    <p class="demowarn" id="wall-readonly" hidden>
+      <strong>Read-only.</strong> You are seeing the inter-agency channels
+      without a card, so the whole operating picture is visible for this demo.
+      Posting still needs an official card — nobody can put words in an
+      agency's mouth — and anything an agency marked internal stays hidden.
+    </p>
+
+    <p class="demowarn">
+      <strong>Demo data.</strong> These are real agencies, but every message below is
+      invented for this prototype. None of these organisations wrote any of it, and
+      it does not describe a real incident.
+    </p>
+
+    <div class="wall" id="agency-wall"></div>
+    </div>
+  </section>
+
+  <!-- ── Community map ──────────────────────────────────────── -->
+  <section class="view" id="view-community" role="tabpanel" tabindex="0" aria-labelledby="tab-community">
+    <div class="split wide">
+      <div class="mapwrap card">
+        <div class="maphead">
+          <h2>Community map</h2>
+          <span class="counter" id="community-counter"></span>
+        </div>
+        <div id="map-community" class="map"></div>
+        <p class="attrib">
+          Photos, offers of help and live feeds, added by people here and checked
+          before they appear. Bigger circles mean more people saw the same thing.
+        </p>
+      </div>
+
+      <div class="card scroller">
+        <div id="mod-queue-wrap" hidden>
+          <h2>Waiting for you <span class="pill" id="queue-count">0</span></h2>
+          <p class="hint">
+            Nothing here is public yet. Approving puts it on the map; declining
+            leaves it visible to its author and to you, never deleted.
+          </p>
+          <div id="mod-queue" class="stack"></div>
+          <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+        </div>
+
+        <h2>Add to the map</h2>
+
+        <form id="evidence-form" class="community-form">
+          <h3>A photo</h3>
+          <p class="hint" id="exif-hint">
+            If the photo still has its location, the pin places itself. We read it,
+            show you, then strip the metadata from the copy we publish.
+          </p>
+          <input type="file" id="evidence-file" accept="image/jpeg,image/png">
+          <input id="evidence-caption" maxlength="200" placeholder="What does it show?">
+          <p class="exifreadout" id="exif-readout" hidden></p>
+          <button class="btn primary compact" type="submit">Add photo</button>
+          <p class="error" id="evidence-error" hidden></p>
+        </form>
+
+        <form id="resource-form" class="community-form">
+          <h3>Something you can offer</h3>
+          <div class="chips" id="resource-kinds"></div>
+          <input id="resource-detail" maxlength="200" placeholder="e.g. Tap water, bring a container">
+          <input id="resource-place" maxlength="120" placeholder="Street or suburb">
+          <input id="resource-contact" maxlength="120" placeholder="How to reach you (optional)">
+          <div class="chips" id="resource-visibility"></div>
+          <button class="btn primary compact" type="submit">Offer this</button>
+          <p class="error" id="resource-error" hidden></p>
+        </form>
+
+        <form id="feed-form" class="community-form">
+          <h3>A live feed</h3>
+          <p class="hint">A camera, a stream or a status page. A moderator checks it first.</p>
+          <div class="chips" id="feed-kinds"></div>
+          <input id="feed-label" maxlength="120" placeholder="What is it?">
+          <input id="feed-url" type="url" maxlength="500" placeholder="https://...">
+          <button class="btn primary compact" type="submit">Suggest feed</button>
+          <p class="error" id="feed-error" hidden></p>
+        </form>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>What people are showing</h2>
+      <p class="hint">
+        Reports and photos of the same thing are stacked together, not merged.
+        Five photos of one flooded road is five witnesses — the count is the point.
+      </p>
+      <div id="stack-list" class="stack"></div>
+    </div>
+  </section>
+
+  <!-- ── Cards & trust (card holders only) ──────────────────── -->
+  <section class="view" id="view-cards" role="tabpanel" tabindex="0" aria-labelledby="tab-cards">
+    <div id="cards-locked" class="card">
+      <h1>Cards &amp; trust</h1>
+      <p class="hint">
+        This is for card holders. Sign in with the code on your access card to
+        issue cards, revoke them, and see who the board thinks has earned
+        moderation.
+      </p>
+    </div>
+
+    <div id="cards-panel" hidden>
+      <div class="split boards">
+        <div class="card">
+          <h1>Issue a card</h1>
+          <p class="hint">
+            Hand the printed card over in person. Whoever holds it is that
+            person, so treat it like a key — and revoke it the moment it goes
+            missing.
+          </p>
+          <form id="issue-form">
+            <label>
+              <span>Who is it for</span>
+              <input id="issue-holder" maxlength="80" placeholder="Name or role, e.g. Aro Valley hub lead">
+            </label>
+            <fieldset>
+              <legend>Permission level</legend>
+              <div class="chips" id="issue-roles"></div>
+            </fieldset>
+            <label>
+              <span>Note <em>optional</em></span>
+              <input id="issue-note" maxlength="200" placeholder="Why this card exists">
+            </label>
+            <button class="btn primary" type="submit">Issue card</button>
+            <p class="error" id="issue-error" hidden></p>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Issued cards</h2>
+          <p class="hint">Codes are never shown again — only their hashes are kept.</p>
+          <div id="cards-list" class="stack"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <h2>Earned trust</h2>
+        <p class="hint">
+          Who the board thinks is worth moderation, scored on countable
+          behaviour. Any message of theirs that has been flagged rules them out
+          entirely. Automation can grant a community moderator card and nothing
+          higher — a moderator cannot issue cards, so the bot can never
+          manufacture an official.
+        </p>
+        <div class="row">
+          <button class="btn primary compact" id="trust-run">Promote everyone eligible</button>
+          <span class="at" id="trust-summary"></span>
+        </div>
+        <div id="trust-list" class="stack"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── WCC ops ────────────────────────────────────────────── -->
+  <section class="view" id="view-ops" role="tabpanel" tabindex="0" aria-labelledby="tab-ops">
+    <div id="ops-locked" class="card locked">
+      <h1>WCC view</h1>
+      <p class="hint">
+        The incoming queue: every report on a map, grouped by proximity, with
+        one-tap statuses that the reporter sees immediately. Needs a card that
+        can set report statuses — hub lead or above.
+      </p>
+      <button class="btn primary compact" id="ops-signin">Sign in with a card</button>
+    </div>
+
+    <div id="ops-panel" hidden>
+    <div class="split wide">
+      <div class="mapwrap card">
+        <div class="maphead">
+          <h2>Incoming reports</h2>
+          <span class="counter" id="ops-counter"></span>
+        </div>
+        <div id="map-ops" class="map"></div>
+        <p class="attrib">Click a pin to open the report.</p>
+      </div>
+      <div class="card scroller">
+        <h2>Queue</h2>
+        <p class="hint">
+          Reports within 250&nbsp;m of each other, of the same type, inside six hours are
+          grouped as one issue. Tap a status — the reporter sees it immediately.
+        </p>
+        <div id="ops-list" class="stack"></div>
+      </div>
+    </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <span>Impact Hub Wellington 2026 · Team 6 · Problem 02</span>
+  <a href="/api/geojson">/api/geojson</a>
+  <a href="/api/signals">/api/signals</a>
+  <a href="/api/health">/api/health</a>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

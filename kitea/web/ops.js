@@ -417,7 +417,7 @@ function hazardChips(hz) {
   };
   if (hz.error) { add("hazard lookup failed", true); return wrap; }
   if (hz.tsunami_zone) add(`tsunami: ${hz.tsunami_zone}`, /red/i.test(hz.tsunami_zone));
-  if (hz.flood_hazard) add(`ponding: ${hz.flood_hazard}`, true);
+  if (hz.flood_hazard) add(`flood: ${hz.flood_hazard}`, true);
   if (hz.liquefaction_risk) add(`liquefaction: ${hz.liquefaction_risk}`,
                                 /high|very/i.test(hz.liquefaction_risk));
   if (hz.fault_zone && hz.fault_zone.name) add(`fault: ${hz.fault_zone.name}`, false);

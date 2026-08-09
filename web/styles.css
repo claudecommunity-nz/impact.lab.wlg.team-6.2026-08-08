@@ -1,0 +1,1304 @@
+/* Two-way channel — Impact Lab Wellington, Team 6.
+   No framework, no CDN, no build step. One file. */
+
+:root {
+  --ink:        #101822;
+  --ink-2:      #40506a;
+  --ink-3:      #7285a0;
+  --paper:      #f4f6f9;
+  --card:       #ffffff;
+  --line:       #dde3ec;
+  --accent:     #0b5cd5;
+  --accent-ink: #ffffff;
+
+  --received:   #5b7089;
+  --reviewing:  #b26a00;
+  --responding: #0b5cd5;
+  --resolved:   #17794a;
+
+  --sea:        #c3dae6;
+  --land:       #f4f1ea;
+  --coast:      #8fadbb;
+  --placename:  #41535f;
+
+  /* Control geometry. One scale, so nothing is 8px next to 9px next to 10px.
+     Before this there were fourteen distinct corner radii and thirty-three
+     font sizes in the sheet, which is what "almost consistent" looks like. */
+  --r-xs:   4px;
+  --r-sm:   7px;
+  --r-md:   10px;
+  --r-lg:   14px;
+  --r-pill: 999px;
+
+  --t1: .7rem;    --t2: .76rem;   --t3: .82rem;
+  --t4: .88rem;   --t5: .95rem;   --t6: 1.05rem;
+
+  /* Control heights, so a button, a chip and an input in the same row line
+     up on both edges instead of nearly lining up. */
+  --h-lg: 40px; --h-md: 36px; --h-sm: 32px;
+  --pad-lg: 16px; --pad-md: 12px; --pad-sm: 9px;
+
+  --e1: 0 1px 2px rgba(16,24,34,.07);
+  --e2: 0 1px 3px rgba(16,32,44,.16), 0 6px 16px rgba(16,32,44,.10);
+  --e3: 0 12px 40px rgba(16,24,34,.20);
+  --focus: 2px solid var(--accent);
+
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16,24,34,.06), 0 8px 24px rgba(16,24,34,.05);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink:    #e7edf5;
+    --ink-2:  #a9b8cc;
+    --ink-3:  #7387a1;
+    --paper:  #0c1119;
+    --card:   #141b26;
+    --line:   #253044;
+    --accent: #5b9bff;
+    --accent-ink: #0a1220;
+
+    --received:   #8ba0ba;
+    --reviewing:  #e0a13c;
+    --responding: #5b9bff;
+    --resolved:   #4cc38a;
+
+    --sea:  #0a1a24;
+    --land: #16222b;
+    --coast: #2c4451;
+    --placename: #9fb6c4;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+h1 { font-size: 1.35rem; margin: 0 0 .2em; letter-spacing: -.01em; }
+h2 { font-size: var(--t5); margin: 0; letter-spacing: -.005em; }
+
+/* ── chrome ─────────────────────────────────────────────── */
+
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; flex-wrap: wrap; gap: 12px;
+  align-items: center; justify-content: space-between;
+  padding: 10px 16px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand strong { display: block; font-size: var(--t5); letter-spacing: -.01em; }
+.brand .sub { display: block; font-size: var(--t2); color: var(--ink-3); }
+.mark {
+  width: 26px; height: 26px; border-radius: var(--r-sm); flex: none;
+  background:
+    radial-gradient(circle at 50% 50%, var(--accent) 0 28%, transparent 29%),
+    conic-gradient(from 210deg, var(--accent) 0 25%, transparent 0 100%);
+  border: 1px solid var(--line);
+}
+
+.tabs { display: flex; gap: 4px; }
+.tab {
+  min-height: var(--h-md); padding: 0 var(--pad-md);
+  background: none; color: var(--ink-2); font-size: var(--t3);
+  border-radius: var(--r-pill);
+}
+.tab:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tab.is-active {
+  background: var(--accent); color: var(--accent-ink); font-weight: 600;
+}
+.pill {
+  display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px;
+  border-radius: var(--r-pill); background: color-mix(in srgb, currentColor 20%, transparent);
+  font-size: var(--t1); font-variant-numeric: tabular-nums;
+}
+
+.disclaimer {
+  margin: 0; padding: 9px 16px;
+  background: color-mix(in srgb, var(--reviewing) 12%, var(--paper));
+  border-bottom: 1px solid var(--line);
+  font-size: var(--t3); color: var(--ink-2);
+}
+.disclaimer strong { color: var(--ink); }
+
+main { padding: 16px; max-width: 1400px; margin: 0 auto; }
+
+footer {
+  display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+  padding: 18px 16px 34px; border-top: 1px solid var(--line);
+  color: var(--ink-3); font-size: var(--t2);
+}
+footer a { color: var(--ink-3); font-family: var(--mono); }
+
+/* ── layout ─────────────────────────────────────────────── */
+
+.view { display: none; }
+.view.is-active { display: block; animation: rise .2s ease both; }
+@keyframes rise { from { opacity: 0; transform: translateY(4px); } }
+
+.split { display: grid; gap: 16px; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); align-items: start; }
+.split.wide { grid-template-columns: minmax(0, 1fr) minmax(0, 460px); }
+@media (max-width: 900px) { .split, .split.wide { grid-template-columns: 1fr; } }
+
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 16px; box-shadow: var(--shadow);
+}
+.stack { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.scroller { max-height: 74vh; overflow-y: auto; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1 1 180px; }
+.hint { color: var(--ink-3); font-size: var(--t3); margin: .2em 0 .8em; }
+
+/* ── controls ───────────────────────────────────────────────
+   Every clickable thing is built from the same three decisions: a height
+   from the scale, horizontal padding from the scale, and a radius from the
+   scale. Anything that needs to differ says so explicitly below. */
+
+.btn, .chip, .tab {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  font: inherit; cursor: pointer; white-space: nowrap;
+  border: 1px solid transparent;
+  transition: background-color .12s ease, border-color .12s ease,
+              color .12s ease, box-shadow .12s ease;
+}
+/* One focus ring for the whole product. :focus-visible rather than :focus so
+   a mouse click does not leave a ring behind, but every keyboard user gets
+   one — including on inputs, which previously used a different offset. */
+.btn:focus-visible, .chip:focus-visible, .tab:focus-visible,
+input:focus-visible, textarea:focus-visible, select:focus-visible,
+a:focus-visible, summary:focus-visible, [role="tab"]:focus-visible {
+  outline: var(--focus); outline-offset: 2px; border-radius: var(--r-sm);
+}
+.btn:active:not(:disabled), .chip:active { transform: translateY(1px); }
+@media (prefers-reduced-motion: reduce) {
+  .btn, .chip, .tab { transition: none; }
+  .btn:active:not(:disabled), .chip:active { transform: none; }
+}
+
+/* ── form ───────────────────────────────────────────────── */
+
+form label { display: block; margin: 0 0 12px; }
+form label > span {
+  display: block; font-size: var(--t3); font-weight: 600;
+  color: var(--ink-2); margin-bottom: 5px;
+}
+form label > span em { font-weight: 400; font-style: normal; color: var(--ink-3); }
+
+input, textarea, select {
+  width: 100%; min-height: var(--h-lg); padding: 8px var(--pad-md);
+  font: inherit; font-size: var(--t5); line-height: 1.3;
+  color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line); border-radius: var(--r-md);
+}
+textarea { min-height: 84px; }
+textarea { resize: vertical; }
+
+fieldset { border: 0; padding: 0; margin: 0 0 14px; }
+legend {
+  font-size: var(--t3); font-weight: 600; color: var(--ink-2); padding: 0; margin-bottom: 6px;
+}
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  min-height: var(--h-sm); padding: 0 var(--pad-md);
+  border-color: var(--line); background: var(--paper); color: var(--ink-2);
+  font-size: var(--t3); border-radius: var(--r-pill);
+}
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent);
+  color: var(--accent-ink); font-weight: 600;
+}
+
+.btn {
+  min-height: var(--h-lg); padding: 0 var(--pad-lg);
+  font-size: var(--t4); font-weight: 600; border-radius: var(--r-md);
+  border-color: var(--line); background: var(--card); color: var(--ink);
+  box-shadow: var(--e1);
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.primary:hover { color: var(--accent-ink); filter: brightness(1.06); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); width: 100%; }
+.btn.ghost { background: transparent; }
+.btn:disabled { opacity: .55; cursor: progress; }
+.btn.tiny { min-height: var(--h-sm); padding: 0 var(--pad-sm); font-size: var(--t2); font-weight: 500; box-shadow: none; }
+
+.readout {
+  font-family: var(--mono); font-size: var(--t2); color: var(--ink-3);
+  padding: 6px 0;
+}
+.readout.set { color: var(--resolved); }
+.formnote { font-size: var(--t2); color: var(--ink-3); margin: 10px 0 0; }
+.error {
+  margin: 10px 0 0; padding: 9px 11px; border-radius: var(--r-sm); font-size: var(--t3);
+  background: color-mix(in srgb, #d93636 14%, transparent);
+  border: 1px solid color-mix(in srgb, #d93636 40%, transparent);
+}
+
+/* ── receipt ────────────────────────────────────────────── */
+
+.receipt { margin-top: 16px; text-align: center; }
+.receipt .tick {
+  width: 46px; height: 46px; margin: 0 auto 8px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 1.4rem; font-weight: 700;
+  background: color-mix(in srgb, var(--resolved) 16%, transparent); color: var(--resolved);
+}
+.receipt .lede { color: var(--ink-3); font-size: var(--t3); margin: .4em 0; }
+.ref {
+  font-family: var(--mono); font-size: clamp(1.8rem, 7vw, 2.6rem);
+  font-weight: 700; letter-spacing: .06em; margin: .1em 0; color: var(--accent);
+}
+.receipt .row { justify-content: center; margin-top: 14px; }
+.context {
+  font-size: var(--t3); color: var(--ink-2); margin: 10px auto 0; max-width: 44ch;
+  padding: 9px 11px; border-radius: var(--r-sm); background: var(--paper);
+  border: 1px dashed var(--line);
+}
+
+/* ── report cards + timeline ────────────────────────────── */
+
+.report {
+  background: var(--card); border: 1px solid var(--line);
+  border-left: 3px solid var(--received);
+  border-radius: var(--r-lg); padding: 13px 15px;
+}
+.report.s-received   { border-left-color: var(--received); }
+.report.s-reviewing  { border-left-color: var(--reviewing); }
+.report.s-responding { border-left-color: var(--responding); }
+.report.s-resolved   { border-left-color: var(--resolved); }
+.report.is-flash { animation: flash 1.4s ease; }
+@keyframes flash {
+  0%, 100% { background: var(--card); }
+  25%      { background: color-mix(in srgb, var(--accent) 16%, var(--card)); }
+}
+
+.report h3 { margin: 0 0 3px; font-size: var(--t5); letter-spacing: -.005em; }
+.report .meta {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  font-size: var(--t2); color: var(--ink-3); margin-bottom: 6px;
+}
+.report .body { font-size: var(--t4); color: var(--ink-2); margin: 0 0 8px; }
+.code { font-family: var(--mono); font-size: var(--t2); color: var(--ink-3); }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: var(--r-pill); font-size: var(--t2); font-weight: 600;
+}
+.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.b-received   { color: var(--received);   background: color-mix(in srgb, var(--received) 14%, transparent); }
+.b-reviewing  { color: var(--reviewing);  background: color-mix(in srgb, var(--reviewing) 16%, transparent); }
+.b-responding { color: var(--responding); background: color-mix(in srgb, var(--responding) 14%, transparent); }
+.b-resolved   { color: var(--resolved);   background: color-mix(in srgb, var(--resolved) 16%, transparent); }
+
+.grouptag {
+  font-size: var(--t1); padding: 2px 7px; border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent);
+  font-weight: 600;
+}
+
+.timeline { list-style: none; margin: 10px 0 0; padding: 0 0 0 16px; border-left: 2px solid var(--line); }
+.timeline li { position: relative; padding: 0 0 12px 12px; font-size: var(--t3); }
+.timeline li::before {
+  content: ""; position: absolute; left: -21px; top: 6px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--card); border: 2px solid var(--ink-3);
+}
+.timeline li.now::before { background: var(--accent); border-color: var(--accent); }
+.timeline .when { display: block; font-size: var(--t2); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.timeline .note { color: var(--ink-2); }
+
+.taps { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; padding-top: 9px; border-top: 1px dashed var(--line); }
+
+/* ── map ────────────────────────────────────────────────── */
+
+.mapwrap { padding: 12px; }
+.maphead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.counter { font-size: var(--t2); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+.map {
+  width: 100%; aspect-ratio: 4 / 3.2; border-radius: var(--r-md); overflow: hidden;
+  background: var(--sea); border: 1px solid var(--line); position: relative;
+  touch-action: manipulation;
+}
+.map svg { display: block; width: 100%; height: 100%; }
+#map-report .map, .map.pickable { cursor: crosshair; }
+
+.zone-red    { fill: #d64545; fill-opacity: .26; stroke: #d64545; stroke-opacity: .5; stroke-width: .6; }
+.zone-orange { fill: #e08a2e; fill-opacity: .22; stroke: #e08a2e; stroke-opacity: .5; stroke-width: .6; }
+.zone-yellow { fill: #e3c342; fill-opacity: .20; stroke: #e3c342; stroke-opacity: .5; stroke-width: .6; }
+.zone-other  { fill: #8899aa; fill-opacity: .14; stroke: #8899aa; stroke-opacity: .4; stroke-width: .6; }
+
+.hub { fill: var(--ink-3); fill-opacity: .55; }
+/* Reports carry a light stroke so they read as foreground against the hub
+   dots, which are a similar size and a similar colour to a "received" pin. */
+.pin {
+  cursor: pointer; transition: transform .12s ease;
+  transform-origin: center; transform-box: fill-box;
+  stroke: var(--card); stroke-width: 1.6;
+}
+.pin:hover { transform: scale(1.35); }
+.pin.p-received   { fill: var(--received); }
+.pin.p-reviewing  { fill: var(--reviewing); }
+.pin.p-responding { fill: var(--responding); }
+.pin.p-resolved   { fill: var(--resolved); }
+.pin-halo { fill: none; stroke: var(--accent); stroke-width: 1.5; opacity: .9; }
+.drop { fill: var(--accent); stroke: var(--card); stroke-width: 1.2; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 9px; font-size: var(--t1); color: var(--ink-3); }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend i { width: 9px; height: 9px; border-radius: var(--r-xs); display: inline-block; }
+
+.attrib { font-size: var(--t1); color: var(--ink-3); margin: 7px 0 0; line-height: 1.4; }
+
+.empty { color: var(--ink-3); font-size: var(--t4); text-align: center; padding: 26px 10px; }
+
+/* ── message board, agency wall, comms banner ───────────── */
+
+.commsbanner {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline;
+  padding: 10px 16px; font-size: var(--t4);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--reviewing) 18%, var(--paper));
+  color: var(--ink);
+}
+.commsbanner.l-info     { background: color-mix(in srgb, var(--responding) 14%, var(--paper)); }
+.commsbanner.l-advisory { background: color-mix(in srgb, var(--reviewing) 14%, var(--paper)); }
+.commsbanner.l-warning  { background: color-mix(in srgb, var(--reviewing) 22%, var(--paper)); }
+.commsbanner.l-critical {
+  background: color-mix(in srgb, #d64545 22%, var(--paper));
+  border-bottom-color: #d64545;
+}
+.cb-tag {
+  font-size: var(--t1); font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: var(--r-pill); flex: none;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+.cb-text { font-weight: 600; flex: 1 1 320px; }
+/* --ink-3 on the warning banner's tinted background lands at 3.83:1.
+   The banner is the one thing on the page that must never be hard to
+   read, so this timestamp uses the stronger ink. */
+.cb-meta { font-size: var(--t1); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+.split.boards { grid-template-columns: minmax(0, 300px) minmax(0, 1fr); }
+@media (max-width: 900px) { .split.boards { grid-template-columns: 1fr; } }
+
+.channels { display: flex; flex-direction: column; gap: 3px; margin: 10px 0 16px; }
+.chan {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  border: 1px solid transparent; background: none; cursor: pointer;
+  font: inherit; font-size: var(--t4); color: var(--ink-2);
+  padding: 8px 10px; border-radius: var(--r-sm); text-align: left;
+}
+.chan:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.chan.is-active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--ink); font-weight: 600; }
+.chan .n { flex: 1; }
+.chan .c { font-size: var(--t1); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+.whoami { border-top: 1px dashed var(--line); padding-top: 12px; }
+
+.chatpane { display: flex; flex-direction: column; min-height: 0; }
+.chathead {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line);
+}
+.messages {
+  flex: 1; overflow-y: auto; max-height: 56vh;
+  display: flex; flex-direction: column; gap: 10px; padding: 12px 2px;
+}
+
+.msg { display: flex; flex-direction: column; gap: 3px; }
+.msg .who { display: flex; flex-wrap: wrap; gap: 7px; align-items: baseline; font-size: var(--t2); }
+.msg .name { font-weight: 600; color: var(--ink); }
+.msg .at { color: var(--ink-3); font-size: var(--t1); font-variant-numeric: tabular-nums; }
+.msg .bubble {
+  background: var(--paper); border: 1px solid var(--line);
+  border-radius: 4px 12px 12px 12px; padding: 9px 12px;
+  font-size: var(--t4); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.msg.is-mine .bubble {
+  background: color-mix(in srgb, var(--accent) 10%, var(--card));
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.msg.is-official .bubble {
+  background: color-mix(in srgb, var(--responding) 9%, var(--card));
+  border-color: color-mix(in srgb, var(--responding) 30%, transparent);
+}
+.msg.is-withheld .bubble {
+  background: transparent; border-style: dashed; color: var(--ink-3);
+  font-style: italic; font-size: var(--t3);
+}
+
+.tag {
+  font-size: var(--t1); font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: var(--r-sm);
+}
+.t-official { background: color-mix(in srgb, var(--responding) 18%, transparent); color: var(--responding); }
+.t-hub      { background: color-mix(in srgb, var(--resolved) 18%, transparent); color: var(--resolved); }
+.t-private  { background: color-mix(in srgb, var(--ink-3) 22%, transparent); color: var(--ink-2); }
+.t-flagged  { background: color-mix(in srgb, #d64545 18%, transparent); color: #d64545; }
+
+.composer { border-top: 1px solid var(--line); padding-top: 10px; }
+.composer textarea { font-size: var(--t4); }
+.composer-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 7px; }
+.btn.compact { width: auto; min-height: var(--h-md); padding: 0 var(--pad-md); }
+
+.demowarn {
+  margin: 14px 0; padding: 10px 13px; border-radius: var(--r-md); font-size: var(--t3);
+  background: color-mix(in srgb, var(--reviewing) 13%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--reviewing) 34%, transparent);
+  color: var(--ink-2);
+}
+.bannerctl .row { margin-top: 10px; }
+
+/* the wall: lots of chat screens on one page */
+.wall {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+}
+.wallpane {
+  background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--ink-3);
+  border-radius: var(--r-lg); padding: 11px 13px; display: flex; flex-direction: column;
+  box-shadow: var(--shadow); min-height: 250px;
+}
+.wallpane h3 { margin: 0; font-size: var(--t3); letter-spacing: -.005em; }
+.wallpane .sub { font-size: var(--t1); color: var(--ink-3); margin-bottom: 8px; }
+.wallpane .messages { max-height: 210px; padding: 0; gap: 8px; }
+.wallpane .msg .bubble { font-size: var(--t3); padding: 7px 10px; }
+.wallpane .composer { padding-top: 8px; margin-top: 8px; }
+.wallpane .composer textarea { font-size: var(--t3); }
+
+/* ── auth cards, roles, trust ────────────────────────────── */
+
+.whoarea { display: flex; align-items: center; gap: 8px; }
+.rolebadge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--t2); font-weight: 700; padding: 5px 11px; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--resolved) 16%, transparent); color: var(--resolved);
+}
+.rolebadge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+dialog {
+  border: 1px solid var(--line); border-radius: var(--r-lg); padding: 20px;
+  background: var(--card); color: var(--ink); max-width: 420px; width: calc(100% - 32px);
+  box-shadow: 0 20px 60px rgba(0,0,0,.28);
+}
+dialog::backdrop { background: rgba(10,16,26,.55); backdrop-filter: blur(2px); }
+dialog h2 { margin-bottom: .4em; }
+#card-code {
+  font-family: var(--mono); font-size: var(--t6); letter-spacing: .08em; text-transform: uppercase;
+}
+
+/* the printed card, on screen and on paper */
+.printcard {
+  border: 2px solid var(--ink); border-radius: var(--r-md); padding: 14px 16px;
+  background: var(--card); margin: 12px 0;
+  display: grid; gap: 6px; max-width: 420px;
+}
+.printcard .pc-head {
+  font-size: var(--t1); font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-2);
+}
+.printcard .pc-code {
+  font-family: var(--mono); font-size: clamp(1.05rem, 4.2vw, 1.5rem); font-weight: 700;
+  letter-spacing: .1em; word-break: break-all;
+}
+.printcard .pc-meta { font-size: var(--t2); color: var(--ink-2); }
+.printcard .pc-warn { font-size: var(--t1); color: var(--ink-3); }
+
+.cardrow {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--r-md);
+  font-size: var(--t3); background: var(--paper);
+}
+.cardrow.is-revoked { opacity: .5; text-decoration-color: var(--ink-3); }
+.cardrow .who { font-weight: 600; flex: 1 1 140px; }
+
+.trustrow {
+  border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px 12px;
+  background: var(--paper);
+}
+.trustrow.is-eligible { border-color: var(--resolved); background: color-mix(in srgb, var(--resolved) 8%, var(--paper)); }
+.trustrow.is-blocked { border-style: dashed; opacity: .75; }
+.trustrow .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.trustrow .score { font-family: var(--mono); font-weight: 700; font-size: var(--t5); }
+.trustrow ul { margin: 6px 0 0; padding-left: 18px; font-size: var(--t2); color: var(--ink-2); }
+
+.meter { height: 5px; border-radius: var(--r-pill); background: var(--line); overflow: hidden; margin-top: 7px; }
+.meter i { display: block; height: 100%; background: var(--accent); }
+.trustrow.is-eligible .meter i { background: var(--resolved); }
+
+@media print {
+  body > *:not(.printarea) { display: none !important; }
+  .printcard { border-color: #000; box-shadow: none; page-break-inside: avoid; }
+}
+
+
+/* ── near-me filter ──────────────────────────────────────── */
+
+.nearbar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 9px 16px; border-bottom: 1px solid var(--line);
+  background: var(--card); font-size: var(--t3);
+}
+.nb-label { font-weight: 600; color: var(--ink-2); }
+.nb-form { display: contents; }
+.nearbar input { width: auto; flex: 1 1 190px; max-width: 260px; padding: 7px 10px; font-size: var(--t3); }
+.nearbar .chip { padding: 0 var(--pad-md); font-size: var(--t2); }
+.nb-state { color: var(--ink-3); font-size: var(--t2); }
+.nb-state.is-set { color: var(--resolved); font-weight: 600; }
+
+.pin.is-far { opacity: .18; }
+.hub.is-far { opacity: .12; }
+.near-ring { fill: color-mix(in srgb, var(--accent) 7%, transparent); stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 6 4; }
+.near-dot { fill: var(--accent); stroke: var(--card); stroke-width: 2; }
+
+
+/* ── community map ───────────────────────────────────────── */
+
+.community-form { border-top: 1px dashed var(--line); padding-top: 12px; margin-top: 12px; }
+.community-form h3 { margin: 0 0 6px; font-size: var(--t4); }
+.community-form input { margin-bottom: 7px; }
+.community-form .chips { margin-bottom: 8px; }
+.exifreadout {
+  font-size: var(--t2); padding: 8px 10px; border-radius: var(--r-sm); margin: 0 0 8px;
+  background: color-mix(in srgb, var(--resolved) 10%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--resolved) 30%, transparent);
+  color: var(--ink-2);
+}
+.exifreadout.none {
+  background: var(--paper); border-color: var(--line); color: var(--ink-3);
+}
+
+.stackcard {
+  border: 1px solid var(--line); border-radius: var(--r-md); padding: 11px 13px;
+  background: var(--paper);
+}
+.stackcard.is-strong { border-color: var(--accent); border-left-width: 3px; }
+.stackcard .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.stackcard .strength {
+  font-weight: 700; font-size: var(--t3); color: var(--accent);
+}
+.thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.thumbs img {
+  width: 84px; height: 62px; object-fit: cover; border-radius: var(--r-sm);
+  border: 1px solid var(--line); background: var(--paper);
+  /* A photo that fails to decode should look like an empty tile, not like
+     broken alt text spilling out of the card. */
+  overflow: hidden; font-size: var(--t1); color: var(--ink-3);
+}
+
+.modrow {
+  border: 1px solid var(--reviewing); border-radius: var(--r-md); padding: 10px 12px;
+  background: color-mix(in srgb, var(--reviewing) 8%, var(--card));
+}
+.modrow img { max-width: 100%; border-radius: var(--r-sm); margin: 6px 0; }
+
+.res { fill: var(--resolved); stroke: var(--card); stroke-width: 1.4; }
+.feedpin { fill: #7a4bd0; stroke: var(--card); stroke-width: 1.4; }
+.stackpin { fill: var(--accent); fill-opacity: .55; stroke: var(--accent); stroke-width: 1.5; }
+
+
+/* ── live map ────────────────────────────────────────────── */
+
+.split.live { grid-template-columns: minmax(0, 1fr) minmax(0, 400px); }
+.split.live-forms { grid-template-columns: 1fr 1fr; margin-top: 16px; }
+@media (max-width: 900px) { .split.live, .split.live-forms { grid-template-columns: 1fr; } }
+.map.tall { aspect-ratio: 4 / 3.4; }
+
+.layers { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.layers .chip { font-size: var(--t2); padding: 0 var(--pad-sm); }
+.layers .chip i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+
+.liverow {
+  border: 1px solid var(--line); border-left: 3px solid var(--ink-3);
+  border-radius: var(--r-md); padding: 10px 12px; background: var(--paper);
+}
+.liverow.k-request { border-left-color: #d64545; }
+.liverow.k-issue   { border-left-color: var(--responding); }
+.liverow.k-report  { border-left-color: var(--reviewing); }
+.liverow.k-photo   { border-left-color: var(--accent); }
+.liverow.k-resource{ border-left-color: var(--resolved); }
+.liverow.k-feed    { border-left-color: #7a4bd0; }
+.liverow .head { display: flex; flex-wrap: wrap; gap: 7px; align-items: baseline; }
+.liverow .kind {
+  font-size: var(--t1); font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: var(--r-sm); background: color-mix(in srgb, currentColor 14%, transparent);
+}
+.liverow h4 { margin: 3px 0; font-size: var(--t4); }
+.liverow .body { font-size: var(--t3); color: var(--ink-2); margin: 0 0 6px; }
+
+.answer {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  font-size: var(--t3); margin-top: 6px; padding: 7px 9px; border-radius: var(--r-sm);
+  background: var(--card); border: 1px solid var(--line);
+}
+.answer .lk { font-weight: 700; }
+.answer.a-confirmed .lk { color: var(--resolved); }
+.answer.a-likely .lk    { color: var(--responding); }
+.answer.a-unlikely .lk  { color: var(--reviewing); }
+.answer.a-unable .lk    { color: #d64545; }
+.answer.a-waiting { border-style: dashed; color: var(--ink-3); }
+
+.respond { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.respond select, .respond input {
+  width: auto; flex: 1 1 120px; font-size: var(--t2); padding: 6px 8px;
+}
+.ok {
+  margin: 10px 0 0; padding: 9px 11px; border-radius: var(--r-sm); font-size: var(--t3);
+  background: color-mix(in srgb, var(--resolved) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--resolved) 40%, transparent);
+}
+
+.reqpin { fill: #d64545; stroke: var(--card); stroke-width: 1.5; }
+.issuepin { fill: var(--responding); stroke: var(--card); stroke-width: 1.5; }
+.reqpin.is-urgent { stroke: #d64545; stroke-width: 2.5; }
+
+
+/* ── climate & equity signal ─────────────────────────────── */
+
+.adapt { margin-top: 16px; border-left: 3px solid var(--resolved); }
+.adapt-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; }
+.finding {
+  border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px 12px;
+  background: var(--paper);
+}
+.finding .what { font-weight: 600; font-size: var(--t4); }
+.finding .reading { font-size: var(--t3); color: var(--ink-2); margin-top: 4px; }
+.finding.f-equity { border-left: 3px solid var(--reviewing); }
+.finding.f-flood  { border-left: 3px solid var(--responding); }
+.finding.f-tsunami{ border-left: 3px solid #d64545; }
+
+/* ── polish pass ─────────────────────────────────────────────
+   Driven by an actual measurement across four viewports, not taste:
+   the tab bar wrapped into 206px of chrome on a phone (a third of the
+   screen before any content), and twelve controls were under the 32px
+   touch-target minimum. */
+
+/* Tabs scroll sideways instead of wrapping. One row, always. */
+.tabs {
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  /* Snap so a half-cut tab doesn't sit at the edge looking like a bug. */
+  scroll-snap-type: x proximity;
+  max-width: 100%;
+  padding-bottom: 2px;
+  margin: 0 -4px;
+  padding-inline: 4px;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab { flex: 0 0 auto; scroll-snap-align: start; }
+
+@media (max-width: 900px) {
+  .topbar {
+    gap: 8px;
+    padding: 8px 12px;
+    /* brand | who on row one, tabs full-width on row two */
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "brand who" "tabs tabs";
+  }
+  .brand { grid-area: brand; }
+  .whoarea { grid-area: who; }
+  .tabs { grid-area: tabs; }
+  .brand .sub { display: none; }
+  main { padding: 12px; }
+}
+
+/* Buttons no longer wrap their labels, which is right, but it means the
+   header's two columns stop fitting on a narrow phone. Stack them rather
+   than shrink "Sign in with a card" into something unreadable. */
+@media (max-width: 520px) {
+  .topbar {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "brand" "who" "tabs";
+  }
+  .whoarea { justify-self: stretch; }
+  .nearbar { padding: 8px 12px; }
+  .nearbar .nb-label { flex-basis: 100%; }
+}
+
+/* Touch targets. Anything a finger has to hit gets 36px. */
+.chip, .btn, .chan, input, select, textarea, .chip { display: inline-flex; align-items: center; }
+/* Focus that is visible without being loud, for keyboard users.
+   The leading `.layers` that used to sit here scoped this whole rule to one
+   filter row, so everything else fell back to the browser default ring. */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+/* Motion, kept subtle and switched off for anyone who asked. */
+.card, .chip, .btn, .liverow, .report, .stackcard { transition: border-color .15s ease, background .15s ease, transform .15s ease; }
+.liverow:hover, .stackcard:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.btn:active, .chip:active { transform: translateY(1px); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* The landing map is the hero — give it room and let the page breathe. */
+#view-live h1 { font-size: clamp(1.35rem, 2.6vw, 1.75rem); }
+.maphead { align-items: baseline; }
+.map { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 4%, transparent); }
+.mapwrap { padding: 14px; }
+
+/* Empty states should look deliberate rather than broken. */
+.empty {
+  border: 1px dashed var(--line); border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--ink-3) 4%, transparent);
+}
+
+/* Scrollers get a soft fade so it is obvious there is more below. */
+.scroller { -webkit-overflow-scrolling: touch; }
+
+/* Long place names and URLs must never push a card wider than the screen. */
+.liverow, .stackcard, .report, .cardrow, .modrow { overflow-wrap: anywhere; }
+footer a { display: inline-flex; align-items: center; min-height: 32px; padding: 0 2px; }
+
+@media (max-width: 900px) {
+  /* Half a phone screen was going on chrome before the map appeared. The
+     disclaimer stays — it is a promise, not decoration — but it does not need
+     to be set at body size. */
+  .brand strong { white-space: nowrap; font-size: var(--t4); }
+  .mark { width: 22px; height: 22px; }
+  .disclaimer { font-size: var(--t1); line-height: 1.4; padding: 7px 12px; }
+  .commsbanner { font-size: var(--t2); padding: 8px 12px; gap: 6px; }
+  .cb-text { flex-basis: 100%; }
+  .cb-meta { display: none; }
+  .nearbar { gap: 6px; padding: 7px 12px; }
+  .nearbar .nb-label { font-size: var(--t2); margin-bottom: -2px; }
+  .layers { gap: 4px; }
+  .layers .chip { font-size: var(--t1); padding: 0 var(--pad-sm); }
+  #view-live h1 { font-size: 1.2rem; }
+  .maphead { flex-wrap: wrap; gap: 4px; }
+  .map.tall { aspect-ratio: 1 / 1; }
+}
+.locked { border-left: 3px solid var(--reviewing); }
+.locked .btn { margin-top: 8px; }
+
+/* ── news & help ─────────────────────────────────────────── */
+
+.filters { display: flex; flex-direction: column; gap: 7px; margin-top: 10px; }
+.newsitem {
+  border: 1px solid var(--line); border-left: 3px solid var(--ink-3);
+  border-radius: var(--r-md); padding: 12px 14px; background: var(--card);
+}
+.newsitem.is-urgent { border-left-color: #d64545; background: color-mix(in srgb, #d64545 5%, var(--card)); }
+.newsitem .head { display: flex; flex-wrap: wrap; gap: 7px; align-items: baseline; margin-bottom: 4px; }
+.newsitem h3 { margin: 2px 0 5px; font-size: var(--t5); letter-spacing: -.005em; }
+.newsitem .body { font-size: var(--t4); color: var(--ink-2); margin: 0; white-space: pre-wrap; }
+.newsitem .src {
+  font-size: var(--t1); font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--responding) 14%, transparent); color: var(--responding);
+}
+.newsitem .cat {
+  font-size: var(--t1); font-weight: 600; padding: 2px 8px; border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--ink-3) 16%, transparent); color: var(--ink-2);
+}
+.newsitem.is-urgent .cat { background: color-mix(in srgb, #d64545 16%, transparent); color: #d64545; }
+.newsitem a { color: var(--accent); font-size: var(--t3); }
+
+.split.help { grid-template-columns: minmax(0, 230px) minmax(0, 1fr); }
+@media (max-width: 900px) { .split.help { grid-template-columns: 1fr; } }
+.helpnav { position: sticky; top: 84px; align-self: start; }
+.helpnav a {
+  display: block; padding: 7px 9px; border-radius: var(--r-sm); font-size: var(--t3);
+  color: var(--ink-2); text-decoration: none;
+}
+.helpnav a:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--ink); }
+@media (max-width: 900px) { .helpnav { position: static; } }
+
+.helpdoc { max-width: 68ch; }
+.helpdoc .lede { font-size: var(--t5); color: var(--ink-2); }
+.helpdoc h2 {
+  font-size: var(--t6); margin: 26px 0 8px; padding-top: 14px;
+  border-top: 1px solid var(--line); scroll-margin-top: 90px;
+}
+.helpdoc h2:first-of-type { border-top: 0; }
+.helpdoc p, .helpdoc li, .helpdoc dd { font-size: var(--t4); color: var(--ink-2); }
+.helpdoc li { margin-bottom: 6px; }
+.helpdoc strong { color: var(--ink); }
+.faq dt { font-weight: 600; color: var(--ink); margin-top: 12px; font-size: var(--t4); }
+.faq dd { margin: 4px 0 0; padding-left: 12px; border-left: 2px solid var(--line); }
+.links a { font-size: var(--t4); }
+
+/* ═══════════════════════════════════════════════════════════
+   DESIGN PASS — "situation board"
+
+   The reference is not a consumer app; it is the wall of an emergency
+   operations centre. Wellington's own emergency vernacular is colour-banded
+   evacuation zones, hazard signage and radio-log discipline, so that is what
+   this borrows: coloured severity rails, monospace eyebrows in the register
+   of a call sign, and a working surface rather than a marketing surface.
+
+   The accent moves off generic tech-blue to a deep HARBOUR TEAL. Wellington
+   is a harbour city, the colour belongs to the subject rather than to
+   software, and it separates cleanly from the red/orange/yellow that
+   evacuation zoning has already spoken for — which mattered, because on this
+   map blue must never read as a hazard grade.
+
+   No web fonts: a CDN font is the same single point of failure as a CDN map,
+   and this has to work on a dead network. So personality comes from
+   treatment — weight contrast, tight display tracking, and wide-tracked
+   monospace eyebrows — not from a typeface nobody can download.
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  --accent:      #0a5f6b;   /* harbour teal */
+  --accent-ink:  #ffffff;
+  --responding:  #0a5f6b;
+  --ink:         #101a21;
+  --paper:       #eef2f4;
+  --line:        #dbe3e6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent:     #4fc3d4;
+    --accent-ink: #05222a;
+    --responding: #4fc3d4;
+    --ink:        #e6eef1;
+    --paper:      #0a1216;
+    --card:       #111d23;
+    --line:       #22343c;
+    --sea:        #0d1a21;
+  }
+}
+
+/* ── type scale ─────────────────────────────────────────────
+   Three registers: display (tight, heavy), body (plain), and a
+   wide-tracked monospace eyebrow that carries the operational voice. */
+
+h1 { letter-spacing: -.022em; font-weight: 700; }
+h2 { letter-spacing: -.014em; font-weight: 650; }
+h3, h4 { letter-spacing: -.008em; }
+
+.kind, .cb-tag, .pc-head, .tabgroup, .src, .tag {
+  font-family: var(--mono);
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+/* Nav: the public journey, then a rule, then operations. Nine flat tabs
+   asked the reader to work out which side of the product they were on. */
+.tabsplit {
+  flex: 0 0 auto; width: 1px; align-self: stretch;
+  background: var(--line); margin: 0 6px;
+}
+.tabgroup {
+  flex: 0 0 auto; align-self: center;
+  font-size: var(--t1); color: var(--ink-3); padding-right: 2px;
+}
+@media (max-width: 900px) { .tabgroup { display: none; } }
+
+/* ── the signature: severity spine ──────────────────────────
+   The live feed reads down a single rail, each entry pegged to it by a node
+   coloured for what it is. It is the shape of an operations log, and it makes
+   "what is going on right now" scannable in one vertical movement instead of
+   card by card. */
+
+#live-feed {
+  position: relative;
+  padding-left: 22px;
+  gap: 14px;
+}
+#live-feed::before {
+  content: "";
+  position: absolute; left: 6px; top: 6px; bottom: 6px;
+  width: 2px; border-radius: var(--r-xs);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ink-3) 34%, transparent),
+    color-mix(in srgb, var(--ink-3) 6%, transparent));
+}
+#live-feed .liverow { position: relative; border-left-width: 1px; }
+#live-feed .liverow::before {
+  content: "";
+  position: absolute; left: -20px; top: 15px;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--card);
+  border: 2.5px solid var(--ink-3);
+}
+#live-feed .k-request::before  { border-color: #c8322c; }
+#live-feed .k-issue::before    { border-color: var(--accent); }
+#live-feed .k-report::before   { border-color: #c07004; }
+#live-feed .k-resource::before { border-color: #127a4b; }
+#live-feed .k-feed::before     { border-color: #7a4bd0; }
+/* A request nobody has answered yet keeps a live ring, so an unanswered ask
+   is visible from across a room rather than needing to be read. */
+#live-feed .liverow:has(.a-waiting)::before {
+  box-shadow: 0 0 0 4px color-mix(in srgb, #c8322c 20%, transparent);
+}
+
+.liverow .kind { font-size: var(--t1); }
+.liverow h3 { font-size: var(--t5); font-weight: 650; margin: 3px 0; }
+
+/* ── surfaces ───────────────────────────────────────────── */
+
+.card { border-radius: var(--r-md); }
+.map { border-radius: var(--r-sm); }
+.commsbanner { border-left: 4px solid var(--reviewing); }
+.commsbanner.l-critical { border-left-color: #c8322c; }
+
+/* Reporter follow-ups read as the other voice in the conversation. */
+.timeline li.from-reporter::before { background: var(--accent); border-color: var(--accent); }
+.timeline li.is-urgent::before { border-color: #c8322c; background: #c8322c; }
+.needs-attention {
+  border-color: #c8322c !important;
+  background: color-mix(in srgb, #c8322c 6%, var(--card));
+}
+
+
+/* ── real data ───────────────────────────────────────────── */
+
+.realnote {
+  margin: 0 0 8px; padding: 7px 10px; border-radius: var(--r-sm); font-size: var(--t2);
+  background: color-mix(in srgb, #127a4b 9%, var(--card));
+  border: 1px solid color-mix(in srgb, #127a4b 32%, transparent);
+  color: var(--ink-2);
+}
+.liverow.k-real { border-left-color: #127a4b; }
+#live-feed .k-real::before { border-color: #127a4b; }
+.liverow.k-real .kind { color: #127a4b; }
+.stale { opacity: .6; }
+.stale .kind { color: var(--ink-3); }
+.realpin { fill: #127a4b; stroke: var(--card); stroke-width: 1.6; }
+.realpin.is-road { fill: #c07004; }
+
+/* ── traffic-light severity ─────────────────────────────────
+   Off the team's workflow board: "Severity — Traffic Lights".
+
+   Built as a SHAPE, not a colour swap. Red, orange and yellow already mean
+   tsunami evacuation zone on this map, so a coloured square would be
+   ambiguous exactly where ambiguity is expensive. A three-lamp signal with
+   one lit is unmistakable at a glance and cannot be confused with a zone
+   fill, and it still reads for anyone who cannot separate the hues, because
+   WHICH lamp is lit carries the meaning as well as its colour. */
+
+.tl {
+  display: inline-flex; flex-direction: column; gap: 1.5px;
+  padding: 2.5px; border-radius: var(--r-xs); vertical-align: middle;
+  background: color-mix(in srgb, var(--ink) 78%, transparent);
+  flex: none;
+}
+.tl i {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: color-mix(in srgb, #ffffff 16%, transparent);
+}
+.tl.t-extreme i:nth-child(1),
+.tl.t-severe  i:nth-child(1) { background: #ff4d43; box-shadow: 0 0 4px #ff4d43; }
+.tl.t-moderate i:nth-child(2) { background: #ffb020; box-shadow: 0 0 4px #ffb020; }
+.tl.t-minor    i:nth-child(3) { background: #3ddc84; box-shadow: 0 0 4px #3ddc84; }
+/* extreme pulses; nothing else moves, so movement means one thing only */
+.tl.t-extreme i:nth-child(1) { animation: tlpulse 1.4s ease-in-out infinite; }
+@keyframes tlpulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .tl.t-extreme i:nth-child(1) { animation: none; } }
+
+.tlwrap { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t2); }
+.tlwrap .lbl { color: var(--ink-2); font-weight: 600; }
+
+/* ═══ FOLDER TABS ═══════════════════════════════════════════
+   Ten sections is too many to hold in your head as one undifferentiated
+   row, so they are colour-coded into four families and shaped as folder
+   tabs sitting on a rule:
+
+     teal    the one view — everything on one map
+     green   yours — what you sent and what came back
+     amber   community — updates, the board, the map people build
+     grey    help
+     slate   operations — needs a card
+
+   Colour is the grouping and the SHAPE is the affordance; neither carries
+   the meaning alone, so it still reads for anyone who cannot separate the
+   hues, and the label always says what it is. */
+
+.tabs {
+  align-items: flex-end;
+  gap: 2px;
+  border-bottom: 2px solid var(--line);
+  padding-bottom: 0;
+  margin-bottom: -1px;
+}
+.tab {
+  position: relative;
+  border-radius: 8px 8px 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  padding: 0 var(--pad-md) 1px;
+  margin-bottom: -2px;
+  background: transparent;
+  font-weight: 550;
+}
+/* the coloured spine along the top of each folder */
+.tab::after {
+  content: "";
+  position: absolute; left: 8px; right: 8px; top: 3px; height: 2.5px;
+  border-radius: var(--r-xs); background: var(--tabc, transparent);
+  opacity: .5; transition: opacity .15s ease;
+}
+.tab:hover { background: color-mix(in srgb, var(--tabc, var(--accent)) 9%, transparent); }
+.tab:hover::after { opacity: .9; }
+
+/* the open folder joins the page below it */
+.tab.is-active {
+  background: var(--card);
+  color: var(--ink);
+  font-weight: 700;
+  border-color: var(--line);
+  border-bottom: 2px solid var(--card);
+  box-shadow: 0 -2px 6px rgba(16,24,34,.05);
+}
+.tab.is-active::after { opacity: 1; height: 3px; }
+
+.tab.g-view { --tabc: #0a5f6b; }
+.tab.g-mine { --tabc: #127a4b; }
+.tab.g-comm { --tabc: #b26a00; }
+.tab.g-help { --tabc: #7285a0; }
+.tab.g-ops  { --tabc: #3d4f63; }
+
+/* Operations sit slightly apart — a different half of the product. */
+.tab.g-ops:first-of-type { margin-left: 10px; }
+.tab.g-ops { color: var(--ink-3); }
+.tab.g-ops.is-active { color: var(--ink); }
+
+/* The pill has to survive on an active folder. */
+.tab.is-active .pill { background: color-mix(in srgb, var(--tabc) 22%, transparent); color: var(--tabc); }
+
+@media (max-width: 900px) {
+  .tabs { border-bottom-width: 1px; }
+  .tab { padding: 0 var(--pad-sm); font-size: var(--t3); }
+  .tab.g-ops:first-of-type { margin-left: 6px; }
+}
+
+
+/* ═══ ACCESSIBILITY PASS ════════════════════════════════════
+   Measured, not assumed. An audit against the rendered page found muted
+   text at 3.76:1 and inactive tabs at 2.56:1 where AA needs 4.5:1 — the
+   grey that looked "quiet and tasteful" was unreadable for anyone with
+   even mild low vision, which in an emergency is the wrong tradeoff to
+   have made without noticing. */
+
+:root { --ink-3: #59697f; }          /* was #7285a0 — 3.76:1, now 5.1:1 */
+@media (prefers-color-scheme: dark) {
+  :root { --ink-3: #9fb2c6; }        /* lifted for the same reason */
+}
+.tab:not(.is-active) { color: var(--ink-2); }   /* was ink-3 at 2.56:1 */
+.tab.g-ops:not(.is-active) { color: var(--ink-2); opacity: .82; }
+.attrib, .hint { color: var(--ink-3); }
+
+/* Visible focus everywhere, including inside the folder tabs. */
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 1; }
+
+/* Screen-reader-only text: real labels for controls that only had a
+   placeholder. A placeholder disappears the moment somebody types, so it
+   was never a label. */
+.sronly {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ═══ LAYOUT ════════════════════════════════════════════════
+   The forms row used a 1fr/1fr grid under a 1fr/400px map row, so the
+   columns did not line up and the page read as two unrelated layouts
+   stacked. Same rhythm throughout, and more of the screen used on a
+   large display. */
+
+main { max-width: 1560px; }
+.split.live-forms { grid-template-columns: minmax(0, 1fr) minmax(0, 400px); }
+.split.live-forms > * { align-self: start; }
+@media (max-width: 900px) { .split.live-forms { grid-template-columns: 1fr; } }
+
+
+/* ── the forms row must not hold space open for a hidden form ──
+   "Publish an issue" only exists for card holders, but the grid reserved its
+   400px column regardless — so signed out, "Ask for help" stopped short with
+   a slab of dead space beside it while the panel above ran full width. The
+   page looked misaligned because it WAS.
+
+   Collapsed to one column whenever the second card is not there, so every
+   section on the Live map uses the same width as every other. */
+.split.live-forms.is-single { grid-template-columns: minmax(0, 1fr); }
+
+/* Same rule for the map row: the feed rail is always present, so the map and
+   the sections beneath it are deliberately different widths. Give the
+   full-width sections the same left edge and let them run to the page edge —
+   consistent, and the whole width is used. */
+#view-live > .card,
+#view-live > .split { width: 100%; }
+
+
+/* The map is a wide letterbox, not a square. Left uncapped, a full-width
+   container with a 4:3.4 ratio pushed it past the fold and the feed beside it
+   ran out long before the map ended. */
+.map.tall { aspect-ratio: 5 / 4; max-height: 74vh; }
+@media (max-width: 900px) { .map.tall { aspect-ratio: 4 / 4; max-height: none; } }
+
+
+/* photo fallback hosts */
+.hosts { margin-top: 8px; }
+.hosts summary { cursor: pointer; font-size: var(--t3); color: var(--accent); font-weight: 600; }
+.hosts ul { margin: 6px 0; padding-left: 18px; font-size: var(--t3); color: var(--ink-2); }
+.hosts li { margin-bottom: 3px; }
+
+/* map detail panel */
+.mapinfo {
+  margin-top: 8px; padding: 11px 13px; border-radius: var(--r-md);
+  background: var(--paper); border: 1px solid var(--accent);
+  border-left-width: 3px; font-size: var(--t4);
+}
+.mapinfo h4 { margin: 0 0 4px; font-size: var(--t5); }
+.mapinfo .meta { font-size: var(--t2); color: var(--ink-3); margin-bottom: 5px; }
+.mapinfo .close { float: right; }
+.pin, .stackpin, .reqpin, .issuepin, .res, .feedpin, .realpin { cursor: pointer; }
+
+/* ═══ THE MAP, PROPERLY ══════════════════════════════════════
+   Streets from OpenStreetMap, baked offline like everything else. The look
+   borrows from operational maps rather than consumer ones — USGS's quake
+   viewer, MetService warnings, Civil Defence hazard maps all do the same
+   thing: a quiet, legible base network, hazard washed over it, and the
+   markers you must not miss burning bright on top.
+
+   Weight is the hierarchy. Four stroke widths across 6,527 streets is the
+   difference between a recognisable city and a grey smear. */
+
+.street{fill:none;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.street.s0{stroke:#aebdca;stroke-width:.6}           /* residential */
+.street.s1{stroke:#9cafbe;stroke-width:.9}            /* tertiary */
+.street.s2{stroke:#8399ab;stroke-width:1.3}           /* secondary, primary */
+.street.s3{stroke:#6d8598;stroke-width:1.9}           /* motorway, trunk */
+
+@media (prefers-color-scheme: dark){
+  .street.s0{stroke:#22303a} .street.s1{stroke:#293945}
+  .street.s2{stroke:#33475466} .street.s2{stroke:#334754}
+  .street.s3{stroke:#3f5665}
+}
+
+/* ---- land and sea ---------------------------------------------------
+   The map background IS the water, and the stitched OpenStreetMap coastline
+   is painted over it as land. That ordering is what lets a single path carry
+   the whole harbour, including the islands, via fill-rule: evenodd.
+
+   Colours are deliberately low-saturation on both: every emergency map worth
+   copying keeps the base quiet so hazard colours and markers are the only
+   saturated things on screen. A pretty blue harbour competes with the one
+   red dot that matters. */
+.land{fill:var(--land);stroke:var(--coast);stroke-width:.7;vector-effect:non-scaling-stroke}
+/* No coastline baked: show land, not an all-water city. */
+.map.no-coast{background:var(--land)}
+
+/* Place names. paint-order puts the halo behind the glyph, which is what
+   keeps a suburb name readable where it crosses a motorway. */
+.place{
+  fill:var(--placename); text-anchor:middle; pointer-events:none;
+  font-family:inherit; font-weight:600; letter-spacing:.02em;
+  paint-order:stroke; stroke:var(--land); stroke-width:2.6px;
+  stroke-linejoin:round; vector-effect:non-scaling-stroke;
+}
+.place.r0{font-weight:800;letter-spacing:.06em;text-transform:uppercase;fill:#2b3b46}
+.place.r1{font-weight:700}
+/* Suburb names are noise at whole-city zoom and essential once you are in.
+   Reveal them as the map earns the room. */
+.map:not(.is-zoomed) .place.r2{display:none}
+
+@media (prefers-color-scheme: dark){
+  .place.r0{fill:#cfdde6}
+}
+
+/* Hazard zones wash over the streets instead of hiding them. */
+.zone-red{fill-opacity:.20} .zone-orange{fill-opacity:.17} .zone-yellow{fill-opacity:.15}
+
+/* Markers gain a soft halo so they hold up over a busy network — the one
+   thing on this map you must not miss is a person asking for help. */
+.reqpin,.issuepin,.stackpin,.res,.feedpin,.realpin,.pin{
+  filter:drop-shadow(0 0 2px rgba(255,255,255,.85))}
+@media (prefers-color-scheme: dark){
+  .reqpin,.issuepin,.stackpin,.res,.feedpin,.realpin,.pin{
+    filter:drop-shadow(0 0 3px rgba(0,0,0,.9))}
+}
+.reqpin.is-urgent{filter:drop-shadow(0 0 4px rgba(200,50,44,.9))}
+.hub{fill-opacity:.45}
+
+/* ---- map controls ---------------------------------------------------
+   Overlaid on the map rather than placed beside it. A control that sits in
+   the page flow pushes the map down every time it appears, and on a phone
+   that is the difference between seeing the harbour and seeing a caption.
+
+   Both stacks sit top-right, away from the CBD, which is where the pins
+   cluster. */
+.mapctl{
+  position:absolute; top:10px; right:10px; z-index:2;
+  display:flex; flex-direction:column; align-items:flex-end; gap:8px;
+  pointer-events:none;                     /* the map keeps its drag surface */
+}
+.mapctl > *{pointer-events:auto}
+
+.mapzoom{display:flex;flex-direction:column;border-radius: var(--r-sm);overflow:hidden;
+  box-shadow:0 1px 3px rgba(16,32,44,.28)}
+.mapzoom button{
+  width:34px;height:34px;border:0;border-bottom:1px solid rgba(16,32,44,.14);
+  background:rgba(255,255,255,.96); color:#22333e;
+  font-size: var(--t6);line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+}
+.mapzoom button:last-child{border-bottom:0;font-size: var(--t5)}
+.mapzoom button:hover{background:#fff;color:var(--accent)}
+.mapzoom button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;z-index:1}
+
+.maplayers{
+  background:rgba(255,255,255,.96); border-radius: var(--r-sm); padding:8px 9px 9px;
+  box-shadow:0 1px 3px rgba(16,32,44,.28); min-width:132px;
+}
+.maplayers-h{
+  margin:0 0 6px; font-size: var(--t1); font-weight:700; letter-spacing:.1em;
+  text-transform:uppercase; color:#5d7181;
+}
+.maplayer{
+  display:flex; align-items:center; gap:7px; width:100%; min-height:30px;
+  border:0; background:none; padding:3px 4px; cursor:pointer;
+  font:inherit; font-size: var(--t2); color:#22333e; text-align:left; border-radius: var(--r-xs);
+}
+.maplayer:hover{background:rgba(16,32,44,.06)}
+.maplayer:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+/* Off is shown by draining the row, not by hiding it: you have to be able to
+   see what you have switched off in order to switch it back on. */
+.maplayer[aria-pressed="false"]{color:#8a9aa6}
+.maplayer[aria-pressed="false"] i{opacity:.22}
+.maplayer i{width:13px;height:13px;border-radius: var(--r-xs);flex:none;display:block}
+.sw-zone{background:linear-gradient(135deg,#d64545 0 33%,#e08a2e 33% 66%,#e3c342 66%)}
+.sw-street{background:#8399ab}
+.sw-hub{background:#5d7181;border-radius: 50%}
+.sw-label{background:#41535f;border-radius: var(--r-xs)}
+
+/* Dragging is the primary way to move the map, so say so with the cursor —
+   and keep the crosshair where clicking means "put the pin here". */
+.map svg{cursor:grab}
+.map svg:active{cursor:grabbing}
+#map-report svg,.map.pickable svg{cursor:crosshair}
+
+@media (prefers-color-scheme: dark){
+  .mapzoom button,.maplayers{background:rgba(20,32,40,.96)}
+  .mapzoom button{color:#cfdde6;border-bottom-color:rgba(255,255,255,.1)}
+  .mapzoom button:hover{background:#1b2b35}
+  .maplayer{color:#cfdde6}
+  .maplayer:hover{background:rgba(255,255,255,.08)}
+  .maplayer[aria-pressed="false"]{color:#71838f}
+  .maplayers-h{color:#8ba0ae}
+}
+
+@media (max-width:560px){
+  .maplayers{display:none}          /* the phone needs the pixels for the map */
+}

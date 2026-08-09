@@ -16,6 +16,8 @@ Usage:
 
 from __future__ import annotations
 
+import math
+
 import wcc_gis
 
 
@@ -62,24 +64,25 @@ def _liquefaction_risk(lat: float, lng: float) -> str | None:
             or _first_attr("liquefaction-overlay", lat, lng, "Category"))
 
 
-def _flood_hazard(lat: float, lng: float) -> str | None:
-    """Flood/ponding hazard at this point.
+# `flood-hazard-areas` is a whole SERVICE, not a layer. Querying it without a
+# layer= raises GisError, which _first_attr swallows — so this returned None
+# for every point in Wellington, silently, forever. Layer 3 is the 1% AEP
+# extent (the standard 100-year flood) and the field is `Label`, not the
+# guessed `Hazard_Class`. Verified against the live service 2026-08-08.
+FLOOD_LAYER = 3
 
-    flood-hazard-areas is a whole ArcGIS service, not a queryable layer
-    (verified 2026-08-10), so this asks the ponding-areas layer instead;
-    presence of a mapped ponding polygon is the signal.
-    """
+
+def _flood_hazard(lat: float, lng: float) -> str | None:
+    """Flood hazard classification at this point (1% AEP extent)."""
     try:
-        rows = wcc_gis.features("ponding-areas", at=(lat, lng), limit=1)
+        rows = wcc_gis.features("flood-hazard-areas", layer=FLOOD_LAYER,
+                                at=(lat, lng), limit=1)
+        if not rows:
+            return None
+        row = rows[0]
+        return row.get("Label") or row.get("Title") or row.get("Description")
     except wcc_gis.GisError:
         return None
-    if not rows:
-        return None
-    r = rows[0]
-    for field in ("Hazard_Class", "Type", "Category", "Description"):
-        if r.get(field):
-            return str(r[field])
-    return "mapped ponding area"
 
 
 def _fault_zone(lat: float, lng: float, radius_m: int = 500) -> dict | None:
@@ -144,23 +147,50 @@ def _nearby_eq_prone_buildings(lat: float, lng: float, radius_m: int = 500) -> l
         return []
 
 
+def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle distance in metres."""
+    radius = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlam = math.radians(lng2 - lng1)
+    a = (math.sin(dphi / 2) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(dlam / 2) ** 2)
+    return 2 * radius * math.asin(math.sqrt(a))
+
+
 def _nearest_emergency_hub(lat: float, lng: float, radius_m: int = 5000) -> dict | None:
-    """Nearest community emergency hub within radius_m."""
+    """Nearest community emergency hub within radius_m.
+
+    A `near=` query returns features *within* the radius in whatever order
+    the service feels like — it is a spatial filter, not a sort. Asking for
+    `limit=1` therefore returns an arbitrary hub inside 5 km, not the closest
+    one: a Newtown report was told its nearest hub was Aro Valley, roughly
+    2 km further away than the correct answer.
+
+    So: take the candidates, and do the sorting here. Telling someone the
+    wrong place to walk to during an emergency is not a cosmetic bug.
+    """
     try:
         rows = wcc_gis.features(
             "community-emergency-hubs",
             near=(lat, lng, radius_m),
-            limit=1,
+            limit=60,
         )
         if not rows:
             return None
-        r = rows[0]
-        # live layer publishes uppercase field names (verified 2026-08-10)
-        address = ", ".join(p for p in (r.get("ADDRESS") or r.get("Address"),
-                                        r.get("SUBURB"), r.get("TOWN")) if p)
+        located = [r for r in rows if r.get("lat") is not None and r.get("lng") is not None]
+        if not located:
+            return None
+        r = min(located, key=lambda h: _haversine_m(lat, lng, h["lat"], h["lng"]))
+        # The live layer publishes NAME/ADDRESS/SUBURB in upper case. The
+        # original guesses (Name/HubName/FACILITY) all miss, so every hub came
+        # back named `None` — verified against the real service 2026-08-08.
+        # Upper case first, the old guesses kept as fallbacks in case the
+        # layer's schema differs on the day.
         return {
             "name": r.get("NAME") or r.get("Name") or r.get("HubName") or r.get("FACILITY"),
-            "address": address or r.get("LOCATION"),
+            "address": r.get("ADDRESS") or r.get("Address") or r.get("LOCATION"),
+            "suburb": r.get("SUBURB") or r.get("TOWN"),
             "lat": r.get("lat"),
             "lng": r.get("lng"),
         }

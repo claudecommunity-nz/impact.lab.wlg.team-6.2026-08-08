@@ -120,7 +120,9 @@ That is the entire economics of the product.
 
 ## Provenance
 
-Built from the Impact Lab Wellington 2026 event (Problem 02, Team 6, with
-Wellington City Council Emergency Management). All live data belongs to its
+Kitea is the commercialisation track of Team 6's Impact Lab Wellington 2026
+submission (Problem 02, with Wellington City Council Emergency Management).
+The event build itself lives in this repo (`run.py`, `core/`, `web/`), stays
+runnable offline, and is demoed at https://impact-lab.bitn.cloud. All live data belongs to its
 publishers and is credited in the product footer. Code is MIT. The repo is
 public and contains no personal information.
