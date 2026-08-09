@@ -520,7 +520,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send_static(self, base: Path, rel: str) -> None:
         target = (base / rel).resolve()
-        if not str(target).startswith(str(base.resolve())):
+        try:
+            # relative_to enforces true containment; a string-prefix check
+            # would also pass sibling dirs that share a name prefix.
+            target.relative_to(base.resolve())
+        except ValueError:
             return self._error(403, "forbidden")
         self._send_file(target)
 
