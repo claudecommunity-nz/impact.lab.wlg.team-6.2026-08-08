@@ -95,7 +95,9 @@ runcmd:
   - KITEA_OPS_KEY=\$(cat /root/kitea-ops-key) /usr/bin/python3 /opt/kitea/scripts/seed_demo.py http://127.0.0.1:8146 || true
 EOF
 
-hcloud server create --name kitea-demo --type cpx11 --image debian-12 \
+# cpx11 is no longer orderable in sin (verified 2026-08-10); cpx22 matches
+# the event box.
+hcloud server create --name kitea-demo --type cpx22 --image debian-12 \
   --location sin --ssh-key jason --ssh-key claude-deploy \
   --label project=impact-lab-wlg --label ephemeral=true \
   --user-data-from-file "$USERDATA"
