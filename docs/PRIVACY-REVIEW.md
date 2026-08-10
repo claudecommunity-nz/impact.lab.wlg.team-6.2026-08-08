@@ -1,6 +1,6 @@
 # Kitea privacy review (NZ Privacy Act 2020)
 
-Status: **drafted 2026-08-10, awaiting accountable sign-off.** This is a
+Status: **signed off 2026-08-10 by Jason Agnew (accountable owner),** residual risks accepted as pilot-stage items. This is a
 working privacy review of the Kitea prototype against the thirteen
 Information Privacy Principles, written to be handed to a council privacy
 officer for a formal PIA at pilot. It documents what the system actually
@@ -63,4 +63,4 @@ does, verified against the code and its tests, not aspirations.
    encrypted backups; fix at pilot with disk encryption).
 4. Demo host is offshore (IPP12, above).
 
-Sign-off: ______________________ (accountable owner, date)
+Sign-off: **Jason Agnew, accountable owner, 10 August 2026** (recorded from in-session approval; risks 1-4 accepted as pilot-stage items)

@@ -94,6 +94,11 @@ That is the entire economics of the product.
   the loop design (acknowledgment-first), the hazard-context enrichment
   wired to each region's own data, and event-tested trust with hubs and
   community networks. Those compound per deployment.
+- **IP position (decided 2026-08-10): deliberately open.** The code stays
+  MIT and public; the commercial offer is deployment, data wiring, support
+  and trust, not a proprietary licence. This is a strategy choice, not an
+  oversight: councils buy sustainability and accountability around open
+  civic infrastructure more readily than lock-in.
 
 ## Honest limitations (what this prototype is not)
 
