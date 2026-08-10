@@ -37,11 +37,12 @@ does, verified against the code and its tests, not aspirations.
 - **IPP8 (accuracy):** provenance is explicit everywhere: community
   reports are labelled "shared as received, not yet council-verified";
   verification is a recorded act with a named actor.
-- **IPP9 (retention):** **gap — no retention schedule.** The append-only
-  design is deliberate for the audit record, but a pilot must define how
-  long reports, photos, contacts and backups live, and implement disposal.
-  Proposed for sign-off: contacts purged 90 days after resolution; photos
-  12 months; anonymised report rows retained for planning.
+- **IPP9 (retention):** **enforced in code** (2026-08-10): contacts are
+  purged 90 days after resolution (offer contacts 90 days from creation),
+  photos after 12 months; anonymised report rows are retained for
+  planning. Runs daily in-process with tests. Backup archives rotate on a
+  14-archive retention; a pilot should align backup retention with the
+  same schedule.
 - **IPP10/11 (use/disclosure):** used only for the response loop; the
   public sees the sanitised subset; contact details are never disclosed
   (offer contacts visible to ops only, tested).
