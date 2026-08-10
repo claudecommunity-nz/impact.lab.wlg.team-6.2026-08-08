@@ -13,6 +13,7 @@ is no account, no login and nothing to forget in an emergency.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 import sqlite3
@@ -41,6 +42,15 @@ CATEGORIES = (
 )
 
 REPORTER_ROLES = ("resident", "community-group", "emergency-hub", "on-behalf")
+
+# Ops roles. duty acts on reports (status + verify); comms publishes council
+# updates; admin does both and manages people. Only a human holding an admin
+# key can create keys: there is deliberately NO automated path to issuing
+# access (the prep kit's hard rule about automation and cards, kept).
+OPS_ROLES = ("duty", "comms", "admin")
+
+COMMS_TYPES = ("flood", "slips", "roads", "power", "rivers", "weather",
+               "quakes", "help", "other")
 
 _DESC_MAX = 2000
 _PLACE_MAX = 200
@@ -84,6 +94,30 @@ def init(db_path: str | Path) -> None:
                 created_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_events_ref ON status_events(ref, id);
+            CREATE TABLE IF NOT EXISTS comms (
+                public_id    TEXT PRIMARY KEY,
+                created_at   TEXT NOT NULL,
+                title        TEXT NOT NULL,
+                body         TEXT NOT NULL,
+                comms_type   TEXT NOT NULL DEFAULT 'other',
+                lat          REAL,
+                lng          REAL,
+                place_name   TEXT,
+                expires_at   TEXT,
+                author       TEXT NOT NULL,
+                withdrawn_at TEXT,
+                withdrawn_by TEXT
+            );
+            CREATE TABLE IF NOT EXISTS ops_users (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL,
+                role       TEXT NOT NULL,
+                key_hash   TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                revoked_at TEXT,
+                revoked_by TEXT
+            );
             """
         )
         # v1 -> v2 migration for databases created before public_id/verified.
@@ -95,6 +129,8 @@ def init(db_path: str | Path) -> None:
         for row in db.execute("SELECT ref FROM reports WHERE public_id IS NULL").fetchall():
             db.execute("UPDATE reports SET public_id=? WHERE ref=?",
                        (_new_public_id(db), row["ref"]))
+    init_offers()
+    init_settings()
 
 
 def _conn() -> sqlite3.Connection:
@@ -295,6 +331,7 @@ def get_public_item(public_id: str) -> dict | None:
         if row is None:
             return None
         item = _row_to_report(row, private=False)
+        item["offer_count"] = offer_count(public_id)
         item["timeline"] = [
             {"status": r["status"], "created_at": r["created_at"]}
             for r in db.execute(
@@ -312,6 +349,7 @@ def reporter_view(ref: str) -> dict | None:
     rep = get_report(ref, private=True)
     if rep:
         rep.pop("contact", None)
+        rep["offers"] = offers_for_item(rep["public_id"], include_contact=False)
     return rep
 
 
@@ -337,3 +375,255 @@ def stats() -> dict:
     counts.update({r["s"]: r["n"] for r in rows})
     counts["total"] = sum(counts[s] for s in STATUSES)
     return counts
+
+
+# ---------------------------------------------------------------------------
+# comms: council updates, first-class official items on the public canvas
+# ---------------------------------------------------------------------------
+
+_TITLE_MAX = 200
+_BODY_MAX = 2000
+
+
+def create_comms(*, title: str, body: str, comms_type: str = "other",
+                 lat: float | None = None, lng: float | None = None,
+                 place_name: str | None = None, expires_at: str | None = None,
+                 author: str = "council") -> dict:
+    title = (title or "").strip()
+    body = (body or "").strip()
+    if not 3 <= len(title) <= _TITLE_MAX:
+        raise ValueError("title must be 3 to 200 characters")
+    if not 3 <= len(body) <= _BODY_MAX:
+        raise ValueError("body must be 3 to 2000 characters")
+    if comms_type not in COMMS_TYPES:
+        raise ValueError(f"comms_type must be one of {COMMS_TYPES}")
+    if lat is not None:
+        lat = float(lat)
+        if not -90 <= lat <= 90:
+            raise ValueError("lat out of range")
+    if lng is not None:
+        lng = float(lng)
+        if not -180 <= lng <= 180:
+            raise ValueError("lng out of range")
+    place_name = (place_name or "").strip()[:_PLACE_MAX] or None
+    now = _now()
+    with _write_lock, _conn() as db:
+        for _ in range(50):
+            pid = "C" + "".join(secrets.choice(_CODE_ALPHABET) for _ in range(6))
+            if db.execute("SELECT 1 FROM comms WHERE public_id=?", (pid,)).fetchone() is None:
+                break
+        else:
+            raise RuntimeError("could not allocate a comms id")
+        db.execute(
+            "INSERT INTO comms (public_id, created_at, title, body, comms_type,"
+            " lat, lng, place_name, expires_at, author)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (pid, now, title, body, comms_type, lat, lng, place_name,
+             expires_at, author),
+        )
+    return get_comms(pid)
+
+
+def get_comms(public_id: str) -> dict | None:
+    with _conn() as db:
+        row = db.execute("SELECT * FROM comms WHERE public_id=?", (public_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_comms(include_inactive: bool = False, limit: int = 200) -> list[dict]:
+    """Public callers get active updates only; ops sees the full history
+    (withdrawn posts stay on the record, never deleted).
+    """
+    q = "SELECT * FROM comms"
+    args: list = []
+    if not include_inactive:
+        q += (" WHERE withdrawn_at IS NULL"
+              " AND (expires_at IS NULL OR expires_at > ?)")
+        args.append(_now())
+    q += " ORDER BY created_at DESC LIMIT ?"
+    args.append(min(int(limit), 1000))
+    with _conn() as db:
+        return [dict(r) for r in db.execute(q, args)]
+
+
+def withdraw_comms(public_id: str, actor: str) -> dict:
+    now = _now()
+    with _write_lock, _conn() as db:
+        row = db.execute("SELECT withdrawn_at FROM comms WHERE public_id=?",
+                         (public_id,)).fetchone()
+        if row is None:
+            raise KeyError(public_id)
+        if row["withdrawn_at"] is None:
+            db.execute("UPDATE comms SET withdrawn_at=?, withdrawn_by=?"
+                       " WHERE public_id=?", (now, actor, public_id))
+    return get_comms(public_id)
+
+
+# ---------------------------------------------------------------------------
+# ops users: named keys with roles (the Access tab)
+# ---------------------------------------------------------------------------
+
+
+def _hash_key(key: str) -> str:
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def create_ops_user(*, name: str, role: str, created_by: str) -> tuple[dict, str]:
+    """Create a named ops user. Returns (user, key). The key is shown ONCE
+    and only its hash is stored, same discipline as the prep kit's card
+    codes: secrets are never persisted in the clear.
+    """
+    name = (name or "").strip()[:100]
+    if len(name) < 2:
+        raise ValueError("name must be at least 2 characters")
+    if role not in OPS_ROLES:
+        raise ValueError(f"role must be one of {OPS_ROLES}")
+    key = "KOPS-" + "".join(secrets.choice(_CODE_ALPHABET) for _ in range(16))
+    now = _now()
+    with _write_lock, _conn() as db:
+        cur = db.execute(
+            "INSERT INTO ops_users (name, role, key_hash, created_at, created_by)"
+            " VALUES (?,?,?,?,?)",
+            (name, role, _hash_key(key), now, created_by),
+        )
+        user_id = cur.lastrowid
+    return ({"id": user_id, "name": name, "role": role, "created_at": now,
+             "created_by": created_by, "revoked_at": None}, key)
+
+
+def list_ops_users() -> list[dict]:
+    with _conn() as db:
+        return [
+            {k: r[k] for k in ("id", "name", "role", "created_at",
+                               "created_by", "revoked_at", "revoked_by")}
+            for r in db.execute("SELECT * FROM ops_users ORDER BY id")
+        ]
+
+
+def revoke_ops_user(user_id: int, actor: str) -> dict:
+    now = _now()
+    with _write_lock, _conn() as db:
+        row = db.execute("SELECT id, revoked_at FROM ops_users WHERE id=?",
+                         (user_id,)).fetchone()
+        if row is None:
+            raise KeyError(user_id)
+        if row["revoked_at"] is None:
+            db.execute("UPDATE ops_users SET revoked_at=?, revoked_by=? WHERE id=?",
+                       (now, actor, user_id))
+        user = db.execute("SELECT * FROM ops_users WHERE id=?", (user_id,)).fetchone()
+    return {k: user[k] for k in ("id", "name", "role", "created_at",
+                                 "created_by", "revoked_at", "revoked_by")}
+
+
+def resolve_ops_key(key: str) -> dict | None:
+    """Map a presented key to an active named user, or None."""
+    if not key:
+        return None
+    with _conn() as db:
+        row = db.execute(
+            "SELECT id, name, role FROM ops_users"
+            " WHERE key_hash=? AND revoked_at IS NULL",
+            (_hash_key(key),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+# ---------------------------------------------------------------------------
+# offers: neighbours responding to an item with help or skills.
+# Council-mediated on purpose: content goes to ops and the reporter, the
+# public sees only a count. Participation without an open board.
+# ---------------------------------------------------------------------------
+
+OFFER_KINDS = ("hands", "equipment", "transport", "shelter", "food-water",
+               "check-in", "skills", "other")
+
+_OFFER_MAX = 500
+
+
+def init_offers() -> None:
+    with _conn() as db:
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS offers (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_public_id TEXT NOT NULL,
+                created_at     TEXT NOT NULL,
+                kind           TEXT NOT NULL,
+                text           TEXT NOT NULL,
+                contact        TEXT,
+                status         TEXT NOT NULL DEFAULT 'new'
+            );
+            CREATE INDEX IF NOT EXISTS idx_offers_item ON offers(item_public_id, id);
+            """
+        )
+
+
+def create_offer(*, item_public_id: str, kind: str, text: str,
+                 contact: str | None = None) -> dict:
+    if kind not in OFFER_KINDS:
+        raise ValueError(f"kind must be one of {OFFER_KINDS}")
+    text = (text or "").strip()
+    if not 3 <= len(text) <= _OFFER_MAX:
+        raise ValueError("offer text must be 3 to 500 characters")
+    contact = (contact or "").strip()[:_CONTACT_MAX] or None
+    now = _now()
+    with _write_lock, _conn() as db:
+        row = db.execute("SELECT ref FROM reports WHERE public_id=?",
+                         (item_public_id,)).fetchone()
+        if row is None:
+            raise KeyError(item_public_id)
+        cur = db.execute(
+            "INSERT INTO offers (item_public_id, created_at, kind, text, contact)"
+            " VALUES (?,?,?,?,?)",
+            (item_public_id, now, kind, text, contact),
+        )
+    return {"id": cur.lastrowid, "item_public_id": item_public_id,
+            "created_at": now, "kind": kind, "text": text}
+
+
+def offers_for_item(item_public_id: str, include_contact: bool) -> list[dict]:
+    """Ops sees contact details; the reporter sees the offer without them."""
+    fields = ("id", "created_at", "kind", "text", "status") + \
+             (("contact",) if include_contact else ())
+    with _conn() as db:
+        return [{k: r[k] for k in fields}
+                for r in db.execute(
+                    "SELECT * FROM offers WHERE item_public_id=? ORDER BY id",
+                    (item_public_id,))]
+
+
+def offer_count(item_public_id: str) -> int:
+    with _conn() as db:
+        return db.execute("SELECT COUNT(*) AS n FROM offers WHERE item_public_id=?",
+                          (item_public_id,)).fetchone()["n"]
+
+
+# ---------------------------------------------------------------------------
+# platform mode: normal or emergency. The switch is council's alone; in
+# emergency the public canvas states plainly that council is coordinating.
+# ---------------------------------------------------------------------------
+
+
+def init_settings() -> None:
+    with _conn() as db:
+        db.execute("CREATE TABLE IF NOT EXISTS settings ("
+                   "key TEXT PRIMARY KEY, value TEXT NOT NULL,"
+                   "updated_at TEXT, updated_by TEXT)")
+
+
+def get_mode() -> str:
+    with _conn() as db:
+        row = db.execute("SELECT value FROM settings WHERE key='mode'").fetchone()
+    return row["value"] if row else "normal"
+
+
+def set_mode(mode: str, actor: str) -> str:
+    if mode not in ("normal", "emergency"):
+        raise ValueError("mode must be normal or emergency")
+    with _write_lock, _conn() as db:
+        db.execute("INSERT INTO settings (key, value, updated_at, updated_by)"
+                   " VALUES ('mode', ?, ?, ?)"
+                   " ON CONFLICT(key) DO UPDATE SET value=excluded.value,"
+                   " updated_at=excluded.updated_at, updated_by=excluded.updated_by",
+                   (mode, _now(), actor))
+    return mode

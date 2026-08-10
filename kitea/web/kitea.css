@@ -501,3 +501,50 @@ body.canvas {
 }
 .kv { font-size: 14px; color: var(--ink-soft); display: grid; gap: 4px; margin-top: 10px; }
 .kv b { color: var(--ink); }
+
+/* ---- v2.1: help FAB, offers, emergency mode ---------------------------- */
+#btn-help-fab {
+  position: absolute; z-index: 30; left: 16px; bottom: 76px;
+  background: var(--raised); color: var(--pine-deep);
+  border: 2px solid var(--pine); cursor: pointer;
+  font-weight: 700; font-size: 15px; font-family: var(--sans);
+  padding: 11px 18px; border-radius: 999px;
+  box-shadow: 0 4px 14px -6px rgba(12,59,53,.4);
+}
+#btn-help-fab:active { transform: scale(.97); }
+@media (max-width: 900px) { #btn-help-fab { bottom: calc(46% + 72px); } }
+
+.notice-slim.emergency {
+  background: var(--danger); color: #fff; border-color: var(--danger);
+  font-size: 14px;
+}
+
+.offer-block {
+  margin-top: 16px; padding: 12px 14px; border-radius: 12px;
+  background: var(--pine-soft); border: 1px solid #CBDDD5;
+}
+.offer-block h4 {
+  font-family: var(--display); font-weight: 640; font-size: 16px;
+  color: var(--pine-deep); margin: 0 0 4px;
+}
+.offer-block .count { font-size: 13px; color: var(--ink-soft); margin-bottom: 8px; }
+.offer-form { display: grid; gap: 8px; }
+.offer-form select, .offer-form input, .offer-form textarea {
+  margin-top: 0; background: var(--raised); font-size: 14px; padding: 9px 10px;
+}
+.offer-form textarea { min-height: 58px; }
+.offer-send {
+  font: inherit; font-weight: 700; cursor: pointer;
+  background: var(--pine); color: #fff; border: none;
+  border-radius: 10px; padding: 10px;
+}
+.offer-thanks { font-weight: 700; color: var(--pine-deep); font-size: 14px; }
+.offer-note { font-size: 12px; color: var(--ink-mute); }
+
+.offer-rows { list-style: none; margin: 10px 0 0; padding: 0; }
+.offer-rows li {
+  background: var(--raised); border: 1px solid var(--line); border-radius: 10px;
+  padding: 9px 12px; margin-bottom: 6px; font-size: 14px;
+}
+.offer-rows .o-kind { font-weight: 700; color: var(--pine-deep); }
+.offer-rows .o-when { color: var(--ink-mute); font-size: 12px; float: right; }

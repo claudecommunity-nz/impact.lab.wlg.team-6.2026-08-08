@@ -22,6 +22,7 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 
 os.environ.setdefault("KITEA_OPS_KEY", "test-ops-key")
+os.environ.setdefault("KITEA_RATE_LIMIT", "1000")
 os.environ["KITEA_DATA_DIR"] = tempfile.mkdtemp(prefix="kitea-test-")
 
 from kitea import server, store  # noqa: E402
@@ -192,6 +193,123 @@ class TestKitea(unittest.TestCase):
         status, _ = _request("POST", f"/api/reports/{rep['ref']}/status",
                              {"status": "verified"}, key=KEY)
         self.assertEqual(status, 400)
+
+    # -- comms + access (roles) ----------------------------------------------
+
+    def test_comms_lifecycle_and_roles(self):
+        # an admin key issues a comms key and a duty key
+        status, comms_user = _request("POST", "/api/ops/users",
+                                      {"name": "Comms Casey", "role": "comms"}, key=KEY)
+        self.assertEqual(status, 201)
+        comms_key = comms_user["key"]
+        self.assertTrue(comms_key.startswith("KOPS-"))
+        _, duty_user = _request("POST", "/api/ops/users",
+                                {"name": "Duty Dana", "role": "duty"}, key=KEY)
+        duty_key = duty_user["key"]
+
+        # comms role posts an update; duty role may not
+        post_body = {"title": "Boil water notice: Karori", "comms_type": "other",
+                     "body": "Until further notice, boil tap water in Karori.",
+                     "lat": -41.2865, "lng": 174.74, "expires_in_h": 24}
+        status, _ = _request("POST", "/api/ops/comms", post_body, key=duty_key)
+        self.assertEqual(status, 403)
+        status, post = _request("POST", "/api/ops/comms", post_body, key=comms_key)
+        self.assertEqual(status, 201)
+        self.assertEqual(post["author"], "Comms Casey")
+        cid = post["public_id"]
+        self.assertRegex(cid, r"^C[A-Z2-9]{6}$")
+
+        # it is publicly visible while active
+        _, pub = _request("GET", "/api/comms")
+        self.assertIn(cid, [c["public_id"] for c in pub["comms"]])
+
+        # comms role cannot touch reports; duty can
+        _, rep = _request("POST", "/api/reports",
+                          {"category": "other", "description": "role boundary"})
+        status, _ = _request("POST", f"/api/reports/{rep['ref']}/status",
+                             {"status": "reviewing"}, key=comms_key)
+        self.assertEqual(status, 403)
+        status, event = _request("POST", f"/api/reports/{rep['ref']}/status",
+                                 {"status": "reviewing"}, key=duty_key)
+        self.assertEqual(status, 201)
+        self.assertEqual(event["actor"], "Duty Dana")  # named audit trail
+
+        # withdraw removes it from the public list but not the record
+        status, _ = _request("POST", f"/api/ops/comms/{cid}/withdraw", {}, key=comms_key)
+        self.assertEqual(status, 200)
+        _, pub = _request("GET", "/api/comms")
+        self.assertNotIn(cid, [c["public_id"] for c in pub["comms"]])
+        _, all_comms = _request("GET", "/api/ops/comms", key=KEY)
+        row = next(c for c in all_comms["comms"] if c["public_id"] == cid)
+        self.assertIsNotNone(row["withdrawn_at"])
+        self.assertEqual(row["withdrawn_by"], "Comms Casey")
+
+    def test_user_management_is_admin_only_and_revocable(self):
+        _, made = _request("POST", "/api/ops/users",
+                           {"name": "Field Frank", "role": "duty"}, key=KEY)
+        frank_key = made["key"]
+
+        # non-admin roles cannot mint keys (no automated promotion path)
+        status, _ = _request("POST", "/api/ops/users",
+                             {"name": "Sneaky", "role": "admin"}, key=frank_key)
+        self.assertEqual(status, 403)
+        status, _ = _request("GET", "/api/ops/users", key=frank_key)
+        self.assertEqual(status, 403)
+
+        # the key works until revoked, then dies
+        status, _ = _request("GET", "/api/ops/reports", key=frank_key)
+        self.assertEqual(status, 200)
+        status, _ = _request("POST", f"/api/ops/users/{made['user']['id']}/revoke",
+                             {}, key=KEY)
+        self.assertEqual(status, 200)
+        status, _ = _request("GET", "/api/ops/reports", key=frank_key)
+        self.assertEqual(status, 401)
+
+    def test_offers_flow_and_visibility(self):
+        _, rep = _request("POST", "/api/reports",
+                          {"category": "tree-down", "description": "big branch down",
+                           "place_name": "Karori"})
+        pid, ref = rep["public_id"], rep["ref"]
+
+        status, out = _request("POST", f"/api/items/{pid}/offer",
+                               {"kind": "equipment", "text": "I have a chainsaw, two streets away",
+                                "contact": "021 555 000"})
+        self.assertEqual(status, 201)
+        self.assertEqual(out["offer_count"], 1)
+
+        # rejected inputs
+        status, _ = _request("POST", f"/api/items/{pid}/offer",
+                             {"kind": "magic", "text": "nope"})
+        self.assertEqual(status, 400)
+        status, _ = _request("POST", "/api/items/KZZZZZZ/offer",
+                             {"kind": "hands", "text": "hello there"})
+        self.assertEqual(status, 404)
+
+        # public sees the count only; reporter sees text but never contact;
+        # ops sees everything
+        _, item = _request("GET", f"/api/items/{pid}")
+        self.assertEqual(item["offer_count"], 1)
+        _, view = _request("GET", f"/api/reports/{ref}")
+        self.assertEqual(view["offers"][0]["text"],
+                         "I have a chainsaw, two streets away")
+        self.assertNotIn("contact", view["offers"][0])
+        _, ops_view = _request("GET", f"/api/ops/reports/{ref}", key=KEY)
+        self.assertEqual(ops_view["offers"][0]["contact"], "021 555 000")
+
+    def test_emergency_mode_is_admin_only(self):
+        _, made = _request("POST", "/api/ops/users",
+                           {"name": "Duty Mo", "role": "duty"}, key=KEY)
+        status, _ = _request("POST", "/api/ops/mode",
+                             {"mode": "emergency"}, key=made["key"])
+        self.assertEqual(status, 403)
+        status, out = _request("POST", "/api/ops/mode",
+                               {"mode": "emergency"}, key=KEY)
+        self.assertEqual(status, 200)
+        _, meta = _request("GET", "/api/meta")
+        self.assertEqual(meta["mode"], "emergency")
+        _request("POST", "/api/ops/mode", {"mode": "normal"}, key=KEY)
+        _, meta = _request("GET", "/api/meta")
+        self.assertEqual(meta["mode"], "normal")
 
     # -- photo handling -------------------------------------------------------
 

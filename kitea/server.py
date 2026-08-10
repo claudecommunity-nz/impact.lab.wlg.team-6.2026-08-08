@@ -30,6 +30,7 @@ import time
 import urllib.parse
 import uuid
 from collections import defaultdict, deque
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -43,7 +44,7 @@ MAP_CENTER = {"lat": -41.2865, "lng": 174.7762, "zoom": 11.5}
 
 _MAX_BODY = 8 * 1024 * 1024          # request body cap (photo travels base64)
 _MAX_PHOTO = 5 * 1024 * 1024         # decoded photo cap
-_RATE_LIMIT = 15                     # report submissions per IP per hour
+_RATE_LIMIT = int(os.environ.get("KITEA_RATE_LIMIT", "15"))  # submissions per IP per hour
 
 # Magic-byte sniffing: the client's declared content type is hostile input.
 _IMAGE_MAGIC = (
@@ -234,10 +235,29 @@ class Handler(BaseHTTPRequestHandler):
     def _client_ip(self) -> str:
         return self.client_address[0]
 
-    def _is_ops(self, query: dict) -> bool:
+    def _ops_identity(self, query: dict) -> dict | None:
+        """Resolve the presented key to an identity {name, role}. The
+        KITEA_OPS_KEY env key is the bootstrap admin (the 'root card');
+        everyone else is a named user from the Access tab.
+        """
         header = self.headers.get("X-Kitea-Key", "")
         candidate = header or (query.get("key") or [""])[0]
-        return secrets.compare_digest(candidate, OPS_KEY)
+        if candidate and secrets.compare_digest(candidate, OPS_KEY):
+            return {"name": "duty-key", "role": "admin"}
+        return store.resolve_ops_key(candidate)
+
+    def _require(self, query: dict, *roles: str) -> dict | None:
+        """Identity if the caller holds one of the roles; answers 401/403
+        itself otherwise. admin implies every role.
+        """
+        ident = self._ops_identity(query)
+        if ident is None:
+            self._error(401, "ops key required")
+            return None
+        if ident["role"] != "admin" and ident["role"] not in roles:
+            self._error(403, f"this action needs the {' or '.join(roles)} role")
+            return None
+        return ident
 
     def log_message(self, fmt, *args):  # quieter default log, no query strings
         path = self.path.split("?")[0]
@@ -264,6 +284,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/meta":
                 return self._send_json({
                     "version": __version__,
+                    "mode": store.get_mode(),
+                    "offer_kinds": store.OFFER_KINDS,
                     "categories": store.CATEGORIES,
                     "statuses": store.STATUSES,
                     "reporter_roles": store.REPORTER_ROLES,
@@ -309,23 +331,45 @@ class Handler(BaseHTTPRequestHandler):
                 ref = (query.get("ref") or [None])[0]
                 return self._stream(ref=ref, ops=False)
 
-            if path == "/api/ops/reports":
-                if not self._is_ops(query):
+            if path == "/api/ops/me":
+                ident = self._ops_identity(query)
+                if ident is None:
                     return self._error(401, "ops key required")
+                return self._send_json(ident)
+            if path == "/api/comms":
+                return self._send_json({"comms": [
+                    {k: c[k] for k in ("public_id", "created_at", "title", "body",
+                                       "comms_type", "lat", "lng", "place_name",
+                                       "expires_at")}
+                    for c in store.list_comms(include_inactive=False)]})
+            if path == "/api/ops/comms":
+                if self._require(query, "duty", "comms") is None:
+                    return
+                return self._send_json({"comms": store.list_comms(include_inactive=True)})
+            if path == "/api/ops/users":
+                if self._require(query, "admin") is None:
+                    return
+                return self._send_json({"users": store.list_ops_users()})
+            if path == "/api/ops/reports":
+                if self._require(query, "duty", "comms") is None:
+                    return
                 reports = store.list_reports(limit=1000, private=True)
                 _group_reports(reports)
                 return self._send_json({"reports": reports, "stats": store.stats()})
             m = re.fullmatch(r"/api/ops/reports/([A-Z0-9-]{4,16})", path)
             if m:
-                if not self._is_ops(query):
-                    return self._error(401, "ops key required")
+                if self._require(query, "duty", "comms") is None:
+                    return
                 rep = store.get_report(m.group(1), private=True)
                 if rep is None:
                     return self._error(404, "no report with that reference code")
+                rep["offers"] = store.offers_for_item(rep["public_id"],
+                                                      include_contact=True)
+                rep["group_photos"] = self._group_photos(m.group(1))
                 return self._send_json(rep)
             if path == "/api/ops/stream":
-                if not self._is_ops(query):
-                    return self._error(401, "ops key required")
+                if self._require(query, "duty", "comms") is None:
+                    return
                 return self._stream(ref=None, ops=True)
 
             return self._error(404, "not found")
@@ -349,16 +393,55 @@ class Handler(BaseHTTPRequestHandler):
 
             if path == "/api/reports":
                 return self._create_report(body)
+            m = re.fullmatch(r"/api/items/(K[A-Z2-9]{4,10})/offer", path)
+            if m:
+                return self._create_offer(m.group(1), body)
             m = re.fullmatch(r"/api/reports/([A-Z0-9-]{4,16})/status", path)
             if m:
-                if not self._is_ops(query):
-                    return self._error(401, "ops key required")
-                return self._set_status(m.group(1), body)
+                ident = self._require(query, "duty")
+                if ident is None:
+                    return
+                return self._set_status(m.group(1), body, ident)
             m = re.fullmatch(r"/api/reports/([A-Z0-9-]{4,16})/verify", path)
             if m:
-                if not self._is_ops(query):
-                    return self._error(401, "ops key required")
-                return self._verify(m.group(1), body)
+                ident = self._require(query, "duty")
+                if ident is None:
+                    return
+                return self._verify(m.group(1), body, ident)
+            if path == "/api/ops/comms":
+                ident = self._require(query, "comms")
+                if ident is None:
+                    return
+                return self._create_comms(body, ident)
+            m = re.fullmatch(r"/api/ops/comms/(C[A-Z2-9]{4,10})/withdraw", path)
+            if m:
+                ident = self._require(query, "comms")
+                if ident is None:
+                    return
+                return self._withdraw_comms(m.group(1), ident)
+            if path == "/api/ops/mode":
+                ident = self._require(query, "admin")
+                if ident is None:
+                    return
+                try:
+                    mode = store.set_mode(str(body.get("mode", "")), ident["name"])
+                except ValueError as exc:
+                    return self._error(400, str(exc))
+                HUB.publish("mode", {"mode": mode})
+                HUB.publish("mode", {"mode": mode, "by": ident["name"]},
+                            ops_only=True)
+                return self._send_json({"mode": mode})
+            if path == "/api/ops/users":
+                ident = self._require(query, "admin")
+                if ident is None:
+                    return
+                return self._create_user(body, ident)
+            m = re.fullmatch(r"/api/ops/users/(\d{1,10})/revoke", path)
+            if m:
+                ident = self._require(query, "admin")
+                if ident is None:
+                    return
+                return self._revoke_user(int(m.group(1)), ident)
             return self._error(404, "not found")
         except BrokenPipeError:
             pass
@@ -393,8 +476,8 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return body
 
-    def _rate_limited(self) -> bool:
-        ip = self._client_ip()
+    def _rate_limited(self, bucket: str = "reports") -> bool:
+        ip = f"{bucket}:{self._client_ip()}"
         now = time.monotonic()
         with _submits_lock:
             window = _submits[ip]
@@ -467,13 +550,13 @@ class Handler(BaseHTTPRequestHandler):
         (UPLOAD_DIR / name).write_bytes(blob)
         return name
 
-    def _set_status(self, ref: str, body: dict) -> None:
+    def _set_status(self, ref: str, body: dict, ident: dict) -> None:
         try:
             event = store.add_status(
                 ref,
                 str(body.get("status", "")),
                 note=str(body.get("note") or ""),
-                actor="ops",
+                actor=ident["name"],
             )
         except KeyError:
             return self._error(404, "no report with that reference code")
@@ -486,10 +569,10 @@ class Handler(BaseHTTPRequestHandler):
                                      "created_at": event["created_at"]})
         self._send_json(event, status=201)
 
-    def _verify(self, ref: str, body: dict) -> None:
+    def _verify(self, ref: str, body: dict, ident: dict) -> None:
         try:
             event = store.verify_report(ref, note=str(body.get("note") or ""),
-                                        actor="ops")
+                                        actor=ident["name"])
         except KeyError:
             return self._error(404, "no report with that reference code")
         HUB.publish("verified", event, ref=ref)
@@ -498,6 +581,110 @@ class Handler(BaseHTTPRequestHandler):
                                      "verified": True,
                                      "created_at": event["created_at"]})
         self._send_json(event, status=201)
+
+    def _group_photos(self, ref: str) -> list[dict]:
+        """Photos from every report in the same situation group, so a duty
+        officer sees the whole scene stacked together, not one photo per
+        click. Public ids only: this payload stays inside the ops boundary
+        but never needs the other reporters' credentials anyway."""
+        reports = store.list_reports(limit=1000, private=True)
+        _group_reports(reports)
+        me = next((r for r in reports if r["ref"] == ref), None)
+        if me is None or me.get("group") is None:
+            return []
+        return [{"public_id": r["public_id"], "photo": r["photo"],
+                 "category": r["category"], "place_name": r["place_name"]}
+                for r in reports
+                if r.get("group") == me["group"] and r["photo"]]
+
+    def _create_offer(self, public_id: str, body: dict) -> None:
+        if self._rate_limited("offers"):
+            return self._error(429, "too many submissions from this "
+                                    "connection; please wait")
+        try:
+            offer = store.create_offer(
+                item_public_id=public_id,
+                kind=str(body.get("kind", "")),
+                text=str(body.get("text", "")),
+                contact=body.get("contact"),
+            )
+        except KeyError:
+            return self._error(404, "no item with that id")
+        except (ValueError, TypeError) as exc:
+            return self._error(400, str(exc))
+        rep = store.get_public_item(public_id)
+        HUB.publish("offer", offer, ops_only=True)
+        # the reporter learns a neighbour has offered; the public only sees
+        # the count move
+        with _misses_lock:
+            pass
+        ref_row = store.list_reports(limit=1000, private=True)
+        ref = next((r["ref"] for r in ref_row if r["public_id"] == public_id), None)
+        if ref:
+            HUB.publish("offer", {k: offer[k] for k in
+                                  ("kind", "text", "created_at")}, ref=ref)
+        HUB.publish("item-updated", {"public_id": public_id,
+                                     "offer_count": rep["offer_count"]})
+        self._send_json({"ok": True, "offer_count": rep["offer_count"]}, status=201)
+
+    def _create_comms(self, body: dict, ident: dict) -> None:
+        expires_at = None
+        hours = body.get("expires_in_h")
+        if hours:
+            try:
+                hours = float(hours)
+            except (TypeError, ValueError):
+                return self._error(400, "expires_in_h must be a number of hours")
+            if not 0 < hours <= 14 * 24:
+                return self._error(400, "expires_in_h must be up to 14 days")
+            expires_at = (datetime.now(timezone.utc)
+                          + timedelta(hours=hours)).isoformat(timespec="seconds")
+        try:
+            post = store.create_comms(
+                title=str(body.get("title", "")),
+                body=str(body.get("body", "")),
+                comms_type=str(body.get("comms_type") or "other"),
+                lat=body.get("lat"), lng=body.get("lng"),
+                place_name=body.get("place_name"),
+                expires_at=expires_at,
+                author=ident["name"],
+            )
+        except (ValueError, TypeError) as exc:
+            return self._error(400, str(exc))
+        public = {k: post[k] for k in ("public_id", "created_at", "title", "body",
+                                       "comms_type", "lat", "lng", "place_name",
+                                       "expires_at")}
+        HUB.publish("comms", public)
+        HUB.publish("comms", post, ops_only=True)
+        self._send_json(post, status=201)
+
+    def _withdraw_comms(self, public_id: str, ident: dict) -> None:
+        try:
+            post = store.withdraw_comms(public_id, actor=ident["name"])
+        except KeyError:
+            return self._error(404, "no update with that id")
+        HUB.publish("comms-withdrawn", {"public_id": public_id})
+        HUB.publish("comms-withdrawn", post, ops_only=True)
+        self._send_json(post)
+
+    def _create_user(self, body: dict, ident: dict) -> None:
+        try:
+            user, key = store.create_ops_user(
+                name=str(body.get("name", "")),
+                role=str(body.get("role", "")),
+                created_by=ident["name"],
+            )
+        except ValueError as exc:
+            return self._error(400, str(exc))
+        # the key appears in this response ONCE and is stored only hashed
+        self._send_json({"user": user, "key": key}, status=201)
+
+    def _revoke_user(self, user_id: int, ident: dict) -> None:
+        try:
+            user = store.revoke_ops_user(user_id, actor=ident["name"])
+        except KeyError:
+            return self._error(404, "no user with that id")
+        self._send_json(user)
 
     _hazard_cache: dict[tuple, tuple[float, dict]] = {}
     _hazard_lock = threading.Lock()

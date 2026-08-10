@@ -99,6 +99,24 @@ def main() -> None:
             post(f"/api/reports/{rep['ref']}/verify",
                  {"note": VERIFY[i]}, with_key=True)
             print("        -> verified")
+    # a council update on the public canvas
+    post("/api/ops/comms", {
+        "title": "Sandbags available at Petone Community Hub",
+        "body": "Free sandbags at the Petone hub until 6pm. Bring ID for your street. "
+                "Crews are prioritising Hutt Rd; please avoid the area if you can.",
+        "comms_type": "flood", "lat": -41.2249, "lng": 174.8724,
+        "place_name": "Petone", "expires_in_h": 24,
+    }, with_key=True)
+    print("posted 1 council update")
+
+    # neighbours offering help on the first report
+    import urllib.request as _u
+    with _u.urlopen(BASE + f"/api/reports/{refs[0]}", timeout=30) as r:
+        pid = json.load(r)["public_id"]
+    for kind, text in [("equipment", "I have a water pump and hoses, two streets over."),
+                       ("hands", "Home all day, happy to help sandbag.")]:
+        post(f"/api/items/{pid}/offer", {"kind": kind, "text": text})
+    print("added 2 offers of help")
     print(f"\nSeeded {len(refs)} reports. Track the first one at {BASE}/?ref={refs[0]}")
 
 

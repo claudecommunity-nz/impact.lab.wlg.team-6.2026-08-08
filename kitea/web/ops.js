@@ -139,6 +139,8 @@ function init() {
   refreshFeeds();
   setInterval(refreshFeeds, 120_000);
   setInterval(renderQueue, 60_000);        // keep the "Xm ago" labels honest
+  initTabs();                              // v2.1: Queue | Comms | Access
+  refreshComms();                          // comms pins on the ops map
 }
 
 function emptyFC() { return { type: "FeatureCollection", features: [] }; }
@@ -408,6 +410,50 @@ async function renderDetail(ref, scrollTop) {
   hint.textContent = "The note is public to the reporter. Keep it plain and kind.";
   box.append(hint);
 
+  if (rep.offers && rep.offers.length) {
+    const ob = document.createElement("div");
+    ob.className = "offers-block";
+    const oh = document.createElement("h4");
+    oh.textContent = `Offers of help (${rep.offers.length})`;
+    ob.append(oh);
+    for (const o of rep.offers) {
+      const item = document.createElement("div");
+      item.className = "offer-item";
+      const k = document.createElement("span");
+      k.className = "o-kind"; k.textContent = o.kind;
+      item.append(k, document.createTextNode(o.text));
+      if (o.contact) {
+        const c = document.createElement("span");
+        c.className = "o-contact"; c.textContent = `contact: ${o.contact}`;
+        item.append(c);
+      }
+      ob.append(item);
+    }
+    box.append(ob);
+  }
+
+  if (rep.group_photos && rep.group_photos.length > (rep.photo ? 1 : 0)) {
+    const ps = document.createElement("div");
+    ps.className = "offers-block";
+    const ph = document.createElement("h4");
+    ph.textContent = "All photos from this situation";
+    ps.append(ph);
+    const strip = document.createElement("div");
+    strip.className = "photo-stack";
+    for (const g of rep.group_photos) {
+      const a = document.createElement("a");
+      a.href = `/uploads/${g.photo}`; a.target = "_blank"; a.rel = "noopener";
+      const img = document.createElement("img");
+      img.src = `/uploads/${g.photo}`;
+      img.alt = `${g.category} photo`;
+      img.title = g.place_name || g.public_id;
+      a.append(img);
+      strip.append(a);
+    }
+    ps.append(strip);
+    box.append(ps);
+  }
+
   const hist = document.createElement("ol");
   hist.className = "history";
   for (const ev of [...rep.history].reverse()) {
@@ -486,6 +532,14 @@ function openStream() {
   es.addEventListener("status", refreshReports);
   es.addEventListener("verified", refreshReports);
   es.addEventListener("report-updated", refreshReports);
+  es.addEventListener("comms", () => refreshComms());
+  es.addEventListener("comms-withdrawn", () => refreshComms());
+  es.addEventListener("offer", () => {
+    if (state.selectedRef) renderDetail(state.selectedRef, false);
+  });
+  es.addEventListener("mode", (e) => {
+    try { paintModeToggle(JSON.parse(e.data).mode); } catch {}
+  });
 }
 
 /* ============================================================== layers */
@@ -779,5 +833,234 @@ function renderFeedMarkers() {
       });
     }
     applyLayerVisibility();
+  }
+}
+
+/* =============================================================== v2.1:
+   tabs, comms, access. Appended module: uses the api()/$ helpers above. */
+
+const COMMS_TYPES = [["flood","Flooding & drains"],["slips","Slips"],
+  ["roads","Roads"],["power","Power"],["rivers","Rivers & rain"],
+  ["weather","Weather"],["quakes","Quakes"],["help","Help & hubs"],
+  ["other","Other / general"]];
+
+let myRole = "duty";
+let commsPlacing = false;
+let commsLatLng = null;
+const commsMarkers = [];
+
+async function initTabs() {
+  try { myRole = (await api("/api/ops/me")).role; } catch { myRole = "duty"; }
+  const tabs = [["queue", "Queue"], ["comms", "Comms"]];
+  if (myRole === "admin") tabs.push(["access", "Access"]);
+  const bar = $("tabbar");
+  bar.replaceChildren();
+  for (const [id, label] of tabs) {
+    const b = document.createElement("button");
+    b.className = "tab";
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", String(id === "queue"));
+    b.textContent = label;
+    b.addEventListener("click", () => {
+      bar.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", "false"));
+      b.setAttribute("aria-selected", "true");
+      for (const pane of ["queue", "comms", "access"])
+        $(`tab-${pane}`).classList.toggle("hidden", pane !== id);
+      if (id === "comms") refreshComms();
+      if (id === "access") refreshUsers();
+    });
+    bar.append(b);
+  }
+
+  if (myRole === "admin") {
+    const toggle = document.createElement("button");
+    toggle.className = "mode-toggle";
+    toggle.id = "mode-toggle";
+    toggle.addEventListener("click", async () => {
+      const now = toggle.classList.contains("on") ? "normal" : "emergency";
+      const warn = now === "emergency"
+        ? "Declare EMERGENCY MODE? The public map banner changes for everyone immediately."
+        : "Return to normal mode?";
+      if (!confirm(warn)) return;
+      try {
+        await api("/api/ops/mode", { method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: now }) });
+      } catch (ex) { alert(ex.message); }
+    });
+    document.querySelector(".top-right").prepend(toggle);
+    try { paintModeToggle((await (await fetch("/api/meta")).json()).mode); }
+    catch { paintModeToggle("normal"); }
+  }
+
+  const typeSel = $("comms-type");
+  for (const [v, label] of COMMS_TYPES) {
+    const o = document.createElement("option");
+    o.value = v; o.textContent = label;
+    typeSel.append(o);
+  }
+  const canPost = myRole === "comms" || myRole === "admin";
+  $("comms-form").style.display = canPost ? "" : "none";
+  $("comms-pin-btn").addEventListener("click", () => {
+    commsPlacing = true;
+    $("comms-pin-state").textContent = "click the map…";
+  });
+  map.on("click", (e) => {
+    if (!commsPlacing) return;
+    commsPlacing = false;
+    commsLatLng = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+    $("comms-pin-btn").classList.add("set");
+    $("comms-pin-state").textContent =
+      `${e.lngLat.lat.toFixed(4)}, ${e.lngLat.lng.toFixed(4)}`;
+  });
+  $("comms-form").addEventListener("submit", postComms);
+  $("user-form").addEventListener("submit", createUser);
+}
+
+function paintModeToggle(mode) {
+  const toggle = $("mode-toggle");
+  if (!toggle) return;
+  const on = mode === "emergency";
+  toggle.classList.toggle("on", on);
+  toggle.textContent = on ? "🚨 EMERGENCY MODE ACTIVE: tap to stand down"
+                          : "Declare emergency mode";
+}
+
+async function postComms(e) {
+  e.preventDefault();
+  const err = $("comms-error");
+  err.textContent = "";
+  const btn = $("comms-post");
+  btn.disabled = true;
+  try {
+    const body = {
+      title: $("comms-title").value.trim(),
+      body: $("comms-body").value.trim(),
+      comms_type: $("comms-type").value,
+    };
+    if ($("comms-expiry").value) body.expires_in_h = Number($("comms-expiry").value);
+    if (commsLatLng) { body.lat = commsLatLng.lat; body.lng = commsLatLng.lng; }
+    await api("/api/ops/comms", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    $("comms-title").value = ""; $("comms-body").value = "";
+    commsLatLng = null;
+    $("comms-pin-btn").classList.remove("set");
+    $("comms-pin-state").textContent = "no location";
+    refreshComms();
+  } catch (ex) { err.textContent = ex.message; }
+  btn.disabled = false;
+}
+
+async function refreshComms() {
+  let data;
+  try { data = await api("/api/ops/comms"); } catch { return; }
+  const box = $("comms-list");
+  box.replaceChildren();
+  const canPost = myRole === "comms" || myRole === "admin";
+  for (const c of data.comms) {
+    const row = document.createElement("div");
+    row.className = "comms-row" + (c.withdrawn_at ? " withdrawn" : "");
+    const t = document.createElement("div");
+    t.className = "c-title"; t.textContent = `📢 ${c.title}`;
+    const meta = document.createElement("div");
+    meta.className = "c-meta";
+    meta.textContent = `${c.author} · ${nzShort.format(new Date(c.created_at))}` +
+      (c.withdrawn_at ? " · WITHDRAWN" :
+       c.expires_at ? ` · expires ${nzShort.format(new Date(c.expires_at))}` : "") +
+      (c.lat != null ? " · 📍" : "");
+    const bodyEl = document.createElement("div");
+    bodyEl.className = "c-body"; bodyEl.textContent = c.body;
+    row.append(t, meta, bodyEl);
+    if (!c.withdrawn_at && canPost) {
+      const w = document.createElement("button");
+      w.className = "c-withdraw";
+      w.textContent = "Withdraw";
+      w.addEventListener("click", async () => {
+        try {
+          await api(`/api/ops/comms/${c.public_id}/withdraw`,
+            { method: "POST", headers: { "Content-Type": "application/json" },
+              body: "{}" });
+          refreshComms();
+        } catch (ex) { alert(ex.message); }
+      });
+      row.append(w);
+    }
+    box.append(row);
+  }
+  renderCommsMarkers(data.comms.filter(c => !c.withdrawn_at));
+}
+
+function renderCommsMarkers(posts) {
+  for (const m of commsMarkers) m.remove();
+  commsMarkers.length = 0;
+  for (const c of posts) {
+    if (c.lat == null || !map) continue;
+    const el = document.createElement("div");
+    el.className = "comms-pin-marker";
+    el.textContent = "📢";
+    el.title = c.title;
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      popupAt({ lng: c.lng, lat: c.lat }, `📢 ${c.title}`, c.body);
+    });
+    commsMarkers.push(new maplibregl.Marker({ element: el })
+      .setLngLat([c.lng, c.lat]).addTo(map));
+  }
+}
+
+async function createUser(e) {
+  e.preventDefault();
+  const err = $("user-error");
+  err.textContent = "";
+  try {
+    const made = await api("/api/ops/users", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: $("user-name").value.trim(),
+                             role: $("user-role").value }) });
+    const box = $("key-reveal");
+    box.classList.remove("hidden");
+    box.replaceChildren();
+    const head = document.createElement("div");
+    head.textContent = `Key for ${made.user.name} (${made.user.role}). ` +
+      "Copy it now: it is shown once and stored only as a hash.";
+    const code = document.createElement("code");
+    code.textContent = made.key;
+    box.append(head, code);
+    $("user-name").value = "";
+    refreshUsers();
+  } catch (ex) { err.textContent = ex.message; }
+}
+
+async function refreshUsers() {
+  let data;
+  try { data = await api("/api/ops/users"); } catch { return; }
+  const box = $("user-list");
+  box.replaceChildren();
+  for (const u of data.users) {
+    const row = document.createElement("div");
+    row.className = "user-row" + (u.revoked_at ? " revoked" : "");
+    const name = document.createElement("span");
+    name.className = "u-name"; name.textContent = u.name;
+    const role = document.createElement("span");
+    role.className = "u-role"; role.textContent = u.role;
+    const meta = document.createElement("span");
+    meta.className = "u-meta";
+    meta.textContent = (u.revoked_at ? `revoked by ${u.revoked_by}` :
+      `by ${u.created_by} · ${nzShort.format(new Date(u.created_at))}`);
+    row.append(name, role, meta);
+    if (!u.revoked_at) {
+      const r = document.createElement("button");
+      r.className = "u-revoke"; r.textContent = "Revoke";
+      r.addEventListener("click", async () => {
+        if (!confirm(`Revoke ${u.name}'s key? This is immediate.`)) return;
+        try {
+          await api(`/api/ops/users/${u.id}/revoke`, { method: "POST",
+            headers: { "Content-Type": "application/json" }, body: "{}" });
+          refreshUsers();
+        } catch (ex) { alert(ex.message); }
+      });
+      row.append(r);
+    }
+    box.append(row);
   }
 }

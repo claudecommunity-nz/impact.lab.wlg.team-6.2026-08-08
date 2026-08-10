@@ -82,15 +82,55 @@ vocabularies cannot bleed into each other.
 Same map component and data, plus the private layers, in three tabs:
 
 - **Queue** (built): triage, situation grouping, one-tap statuses, one-tap
-  Verify, hazard context per report, feed-health strip.
-- **Comms** (designed, next): council posts an update; it lands as an
-  official item on the public canvas (geotagged when relevant). One
-  publishing surface, replacing the event build's separate message-board
-  world. No open public board: a moderation liability councils will veto,
-  and removing it is a selling point.
-- **Access** (designed, next): who can verify, who can post comms,
-  delegation. Council SSO lands here; the event build's printed access
-  cards remain the offline/field fallback story.
+  Verify, hazard context per report, feed-health strip, offers of help per
+  report, and the photo stack: every photo from a grouped situation shown
+  together on any report in the group.
+- **Comms** (built): council posts an update (typed, optionally geotagged,
+  optional expiry); it lands on the public canvas as an official item
+  immediately, withdrawable but never deleted. One publishing surface,
+  replacing the event build's separate message-board world. No open public
+  board: a moderation liability councils will veto, and removing it is a
+  selling point.
+- **Access** (built): named keys, one per person, in three roles: duty
+  (statuses + verify), comms (public updates), admin (both + people +
+  emergency mode). Keys are shown once and stored hashed; revocation is
+  immediate; every status/verify event carries the actor's name in the
+  audit trail. Only a human admin can issue keys: no automated promotion
+  path exists, by design. Council SSO replaces keys at pilot; the event
+  build's printed access cards remain the offline/field fallback story.
+
+## Community participation (built with v2.1)
+
+- **Ask for help** is a first-class action beside "Report something":
+  same drawer, welfare-need preselected, urgent treatment in the queue.
+- **Offers of help** attach to items: a neighbour taps an item and offers
+  hands, equipment, transport, shelter, food/water, a check-in, or a
+  skill, with optional contact. Deliberately council-mediated: the public
+  sees only the count, the reporter sees the offers (no contact details),
+  ops sees everything and can connect people. Participation without an
+  open wall.
+- **Emergency mode**: an admin declares it and the whole platform states
+  it: the public banner switches to "the council is coordinating the
+  response". Standing down is the same single control. In normal times the
+  platform runs exactly the same loop for everyday reports: the emergency
+  posture is a switch, not a separate product.
+
+## The horizon: working as one
+
+Where this goes next, agreed 2026-08-10 (designed, not yet built):
+
+- **Notification tiers**: official notifications (council/agency, pushed
+  prominently) vs community notifications (nearby reports, opt-in), on Web
+  Push and an SMS gateway so no-data phones stay included.
+- **Agency collaboration**: agencies as first-class actors: an agency role
+  posting into Comms under its own name (Wellington Water, NZTA, WREMO),
+  and the outbound GeoJSON/CAP feed so Kitea items appear in the CDEM
+  common operating picture and vice versa. The council can ask FOR help,
+  not just receive it: a council "request for resources" item type that
+  agencies and community both see and answer with the same offer mechanic.
+- **Standing skills register**: residents register capabilities out of
+  event time (chainsaw, 4WD, first aid, languages, ham radio) so the offer
+  pool exists before it is needed: recruitment happens on the calm days.
 
 ## What v2 deliberately drops
 

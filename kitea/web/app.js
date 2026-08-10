@@ -112,6 +112,7 @@ const state = {
   lens: "everything",            // everything | official | community | mine
   types: new Set(TYPES.map(t => t[0])),
   reports: [],
+  comms: [],
   feeds: {},
   selected: null,                // {kind:"report", public_id} | {kind:"feed", ...}
   placing: false,
@@ -164,12 +165,17 @@ function initCanvas() {
   });
 
   buildDrawer();
-  $("btn-report-fab").addEventListener("click", () => {
+  const startPlacing = (preset) => {
+    presetCategory = preset;
     state.placing = true;
     $("placing-banner").classList.remove("hidden");
     $("btn-report-fab").classList.add("hidden");
+    $("btn-help-fab").classList.add("hidden");
     map.getCanvas().style.cursor = "crosshair";
-  });
+  };
+  $("btn-report-fab").addEventListener("click", () => startPlacing(null));
+  $("btn-help-fab").addEventListener("click", () => startPlacing("welfare-need"));
+  loadMode();
   $("placing-banner").addEventListener("click", () => { exitPlacing(); openDrawer(null); });
   $("panel-back").addEventListener("click", () => { state.selected = null;
     history.replaceState(null, "", "/"); renderPanel(); });
@@ -178,6 +184,7 @@ function initCanvas() {
     const deep = params.get("item");
     if (deep) selectReportItem(deep, false);
   });
+  loadComms();
   refreshFeeds();
   setInterval(refreshFeeds, 150_000);
   setInterval(renderPanel, 60_000);
@@ -188,7 +195,24 @@ function exitPlacing() {
   state.placing = false;
   $("placing-banner").classList.add("hidden");
   $("btn-report-fab").classList.remove("hidden");
+  $("btn-help-fab").classList.remove("hidden");
   if (map) map.getCanvas().style.cursor = "";
+}
+
+async function loadMode() {
+  try { applyMode((await getJSON("/api/meta")).mode); } catch {}
+}
+
+function applyMode(mode) {
+  const bar = document.querySelector(".notice-slim");
+  if (!bar) return;
+  if (mode === "emergency") {
+    bar.classList.add("emergency");
+    bar.textContent = "🚨 EMERGENCY: the council is coordinating the response on this map. For life-threatening danger call 111.";
+  } else {
+    bar.classList.remove("emergency");
+    bar.textContent = "⚠️ In a life-threatening emergency call 111. Prototype using public hazard-planning data.";
+  }
 }
 
 /* ---- lenses & chips ---------------------------------------------------- */
@@ -286,6 +310,22 @@ function openCanvasStream() {
     renderReportPins();
     renderPanel();
   });
+  es.addEventListener("mode", (e) => {
+    try { applyMode(JSON.parse(e.data).mode); } catch {}
+  });
+  es.addEventListener("comms", (e) => {
+    try { state.comms.unshift(JSON.parse(e.data)); } catch { return; }
+    renderFeedMarkers();
+    renderPanel();
+  });
+  es.addEventListener("comms-withdrawn", (e) => {
+    try {
+      const gone = JSON.parse(e.data).public_id;
+      state.comms = state.comms.filter(c => c.public_id !== gone);
+    } catch { return; }
+    renderFeedMarkers();
+    renderPanel();
+  });
   es.addEventListener("item-updated", (e) => {
     let up; try { up = JSON.parse(e.data); } catch { return; }
     const rep = state.reports.find(r => r.public_id === up.public_id);
@@ -346,9 +386,34 @@ function addFeedMarker(type, lat, lng, el, onClick) {
   feedMarkers.push({ type, marker, el });
 }
 
+async function loadComms() {
+  try { state.comms = (await getJSON("/api/comms")).comms; }
+  catch { state.comms = []; }
+  renderFeedMarkers();
+  renderPanel();
+}
+
+function commsInfo(c) {
+  return {
+    type: c.comms_type, title: `\u{1F4E2} ${c.title}`,
+    sub: c.body + (c.place_name ? ` (${c.place_name})` : "") +
+         (c.expires_at ? ` · until ${fmtTime(c.expires_at)}` : ""),
+    attribution: "Council update", when: c.created_at,
+  };
+}
+
 function renderFeedMarkers() {
   if (!map) return;
   clearFeedMarkers();
+
+  for (const c of state.comms) {
+    if (c.lat == null) continue;
+    const el = document.createElement("div");
+    el.className = "cpin-hub";
+    el.textContent = "\u{1F4E2}";
+    el.title = c.title;
+    addFeedMarker(c.comms_type, c.lat, c.lng, el, () => selectFeedItem(commsInfo(c)));
+  }
 
   for (const g of ((state.feeds.gauges || {}).items || [])) {
     if (g.error || g.lat == null) continue;
@@ -453,6 +518,12 @@ function renderPanel() {
     rows.push({ time: r.created_at, el: reportRow(r, prov) });
   }
   if (agencyVisible()) {
+    for (const c of state.comms) {
+      if (!state.types.has(c.comms_type)) continue;
+      rows.push({ time: c.created_at, el: feedRow("\u{1F4E2}", c.title,
+        c.place_name || "Council update", c.created_at,
+        () => selectFeedItem(commsInfo(c))) });
+    }
     for (const w of ((state.feeds.weather || {}).items || [])) {
       if (!state.types.has("weather")) continue;
       rows.push({ time: w.published || new Date().toISOString(),
@@ -637,6 +708,8 @@ async function selectReportItem(publicId, fly) {
   }
   d.append(tl);
 
+  d.append(offerBlock(item, mine));
+
   if (mine) {
     const a = document.createElement("a");
     a.className = "detail-cta";
@@ -653,6 +726,67 @@ async function selectReportItem(publicId, fly) {
 
   const rep = state.reports.find(r => r.public_id === publicId);
   if (fly && rep && rep.lat != null) map.flyTo({ center: [rep.lng, rep.lat], zoom: 14 });
+}
+
+function offerBlock(item, mine) {
+  const wrap = document.createElement("div");
+  wrap.className = "offer-block";
+  const h = document.createElement("h4");
+  h.textContent = mine ? "Offers of help" : "Can you help with this?";
+  wrap.append(h);
+  const count = document.createElement("div");
+  count.className = "count";
+  count.textContent = item.offer_count
+    ? `${item.offer_count} neighbour${item.offer_count === 1 ? " has" : "s have"} offered to help. The council and the reporter can see the offers.`
+    : "No offers yet. Offers go to the council and the reporter, not the public.";
+  wrap.append(count);
+  if (mine) {
+    const note = document.createElement("div");
+    note.className = "offer-note";
+    note.textContent = "Open your tracking page below to read them.";
+    wrap.append(note);
+    return wrap;
+  }
+  const form = document.createElement("form");
+  form.className = "offer-form";
+  const kind = document.createElement("select");
+  for (const [v, label] of [["hands", "A pair of hands"], ["equipment", "Equipment or tools"],
+      ["transport", "Transport"], ["shelter", "Shelter or a warm room"],
+      ["food-water", "Food or water"], ["check-in", "I can check on someone"],
+      ["skills", "A skill (first aid, trade, language…)"], ["other", "Something else"]]) {
+    const o = document.createElement("option");
+    o.value = v; o.textContent = label;
+    kind.append(o);
+  }
+  const text = document.createElement("textarea");
+  text.maxLength = 500;
+  text.placeholder = "What can you offer, and when? e.g. I have a chainsaw and I'm two streets away.";
+  const contact = document.createElement("input");
+  contact.type = "text"; contact.maxLength = 200;
+  contact.placeholder = "Contact (optional, council staff only)";
+  const send = document.createElement("button");
+  send.type = "submit"; send.className = "offer-send";
+  send.textContent = "Send offer to the council";
+  form.append(kind, text, contact, send);
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    send.disabled = true;
+    try {
+      await postJSON(`/api/items/${encodeURIComponent(item.public_id)}/offer`,
+        { kind: kind.value, text: text.value.trim(),
+          contact: contact.value.trim() || null });
+      form.replaceChildren();
+      const thanks = document.createElement("div");
+      thanks.className = "offer-thanks";
+      thanks.textContent = "Kia ora: your offer is with the council and the reporter.";
+      form.append(thanks);
+    } catch (ex) {
+      send.disabled = false;
+      alert(ex.message);
+    }
+  });
+  wrap.append(form);
+  return wrap;
 }
 
 function selectFeedItem(info) {
@@ -692,6 +826,7 @@ function selectFeedItem(info) {
 /* ================================================================ drawer */
 
 let pickedCategory = null;
+let presetCategory = null;
 let photoB64 = null;
 let drawerLatLng = null;
 
@@ -701,6 +836,7 @@ function buildDrawer() {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "chip";
+    b.dataset.value = value;
     b.setAttribute("aria-pressed", "false");
     const icon = document.createElement("span");
     icon.className = "chip-icon";
@@ -724,6 +860,12 @@ function buildDrawer() {
 
 function openDrawer(latLng) {
   drawerLatLng = latLng;
+  if (presetCategory) {
+    const chip = [...$("category-chips").querySelectorAll(".chip")]
+      .find(c => c.dataset.value === presetCategory);
+    if (chip) chip.click();
+    presetCategory = null;
+  }
   const pinState = $("pin-state");
   if (latLng) {
     pinState.className = "pin-state";
@@ -870,6 +1012,7 @@ async function refreshTrack(ref) {
       (rep.verified ? " · ✓ council-verified" : "");
     renderTrackTimeline(rep);
     renderHub(rep);
+    renderTrackOffers(rep);
   } catch (ex) {
     $("track-error").textContent =
       ex.message.includes("no report")
@@ -946,6 +1089,41 @@ function renderHub(rep) {
     ". In a major emergency, hubs are where neighbours gather to help each other."));
 }
 
+function renderTrackOffers(rep) {
+  const offers = rep.offers || [];
+  if (!offers.length) return;
+  let box = $("track-offers");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "track-offers";
+    box.className = "offer-block";
+    $("track-hub").after(box);
+  }
+  box.replaceChildren();
+  const h = document.createElement("h4");
+  h.textContent = "Neighbours have offered to help";
+  box.append(h);
+  const kinds = { "hands": "A pair of hands", "equipment": "Equipment or tools",
+    "transport": "Transport", "shelter": "Shelter", "food-water": "Food or water",
+    "check-in": "A check-in", "skills": "A skill", "other": "Help" };
+  const ol = document.createElement("ul");
+  ol.className = "offer-rows";
+  for (const o of offers) {
+    const li = document.createElement("li");
+    const when = document.createElement("span");
+    when.className = "o-when"; when.textContent = agoText(o.created_at);
+    const kind = document.createElement("span");
+    kind.className = "o-kind"; kind.textContent = (kinds[o.kind] || o.kind) + ": ";
+    li.append(when, kind, document.createTextNode(o.text));
+    ol.append(li);
+  }
+  box.append(ol);
+  const note = document.createElement("div");
+  note.className = "offer-note";
+  note.textContent = "The council holds the offerers' contact details and can connect you.";
+  box.append(note);
+}
+
 function openTrackStream(ref) {
   const tag = $("track-live"), text = $("track-live-text");
   if (trackSource) trackSource.close();
@@ -954,6 +1132,7 @@ function openTrackStream(ref) {
   trackSource.onerror = () => { tag.classList.remove("connected"); text.textContent = "reconnecting…"; };
   trackSource.addEventListener("status", () => refreshTrack(ref));
   trackSource.addEventListener("verified", () => refreshTrack(ref));
+  trackSource.addEventListener("offer", () => refreshTrack(ref));
   trackSource.addEventListener("report-updated", () => refreshTrack(ref));
 }
 
