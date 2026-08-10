@@ -332,6 +332,29 @@ class TestKitea(unittest.TestCase):
                               "website": "x"})
         self.assertEqual(status, 400)
 
+    def test_rate_buckets_use_real_visitor_ip_behind_tunnel(self):
+        # Behind the tunnel every socket peer is Cloudflare; identity must
+        # come from Cf-Connecting-Ip or the buckets collapse into one.
+        import urllib.request as _u
+        def miss(ip):
+            req = _u.Request(
+                f"http://127.0.0.1:{self.port}/api/reports/WGN-GUESSNOT",
+                headers={"Cf-Connecting-Ip": ip})
+            try:
+                _u.urlopen(req, timeout=10)
+                return 200
+            except _u.HTTPError as exc:  # noqa: F841
+                return exc.code
+        # visitor A exhausts THEIR miss budget
+        last = 404
+        for _ in range(35):
+            last = miss("203.0.113.7")
+            if last == 429:
+                break
+        self.assertEqual(last, 429)
+        # visitor B is unaffected
+        self.assertEqual(miss("203.0.113.8"), 404)
+
     # -- photo handling -------------------------------------------------------
 
     def test_photo_magic_bytes_enforced(self):

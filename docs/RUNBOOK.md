@@ -18,13 +18,16 @@ Defined against the measured envelope (load smoke in CI, 2026-08-10:
 | Acknowledgment | `received` status is synchronous with submission | by construction (same transaction), covered by tests |
 | Data loss window | 24 h max (daily backups) | `kitea-backup.timer`; restore drill on every backup run |
 
-Scaling: `--workers N` runs N processes sharing the port via
-SO_REUSEPORT. Measured 2026-08-10: 1 worker ~125 req/s (p95 ~600 ms at
-20-concurrent); 2 workers 477 req/s with p95 13.7 ms at 100-concurrent,
-zero errors (the stress tier in CI re-proves this every push). Prod runs
-`--workers 2`. `/api/metrics` (ops key) exposes uptime, request count,
-SSE clients and feed cache ages. Retention (privacy review IPP9) runs
-daily in-process; counts appear in journald when anything is purged.
+Scaling: **production runs 1 worker** (the SSE hub is in-process, so
+multi-worker splits live-update delivery — independent review finding,
+2026-08-10; a cross-process broker is the prerequisite for more).
+1 worker clears the pilot SLO with 25-100x headroom. `--workers N`
+(SO_REUSEPORT) exists for read-heavy scaling and is stress-measured in
+CI: 2 workers take 1000 requests at 100-concurrent, p95 13.7 ms,
+477 req/s, zero errors. `/api/metrics` (ops key) exposes uptime, request
+count, SSE clients and feed cache ages. Retention (privacy review IPP9)
+runs daily in-process; counts appear in journald when anything is
+purged. Rate limits are per real visitor IP via Cf-Connecting-Ip.
 
 ## Common operations
 

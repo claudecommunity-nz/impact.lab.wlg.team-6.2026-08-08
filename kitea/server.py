@@ -242,6 +242,18 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"error": message}, status)
 
     def _client_ip(self) -> str:
+        """The real visitor, not the tunnel. Behind Cloudflare every socket
+        peer is the tunnel process, which silently collapses every per-IP
+        bucket into one global one (found by independent review). The
+        origin has no public ports, so these headers can only come from
+        Cloudflare; bare local traffic falls back to the socket address.
+        """
+        cf = self.headers.get("Cf-Connecting-Ip", "").strip()
+        if cf:
+            return cf
+        xff = self.headers.get("X-Forwarded-For", "")
+        if xff:
+            return xff.split(",")[0].strip()
         return self.client_address[0]
 
     def _ops_identity(self, query: dict) -> dict | None:
@@ -844,6 +856,13 @@ class _ReusePortServer(ThreadingHTTPServer):  # pragma: no cover - exercised by 
 
 def run(host: str = "127.0.0.1", port: int = 8146, workers: int = 1) -> None:  # pragma: no cover - subprocess entrypoint
     store.init(DATA_DIR / "kitea.db")
+    if workers > 1:
+        # The SSE hub is in-process: with N workers, a live-update event
+        # published in one worker never reaches subscribers connected to
+        # another (found by independent review). Multi-worker is for
+        # read-heavy stress only until a cross-process broker exists.
+        print("WARNING: --workers > 1 splits SSE delivery across processes; "
+              "live updates need a single worker (or a broker) in production")
     if workers > 1 and hasattr(os, "fork"):
         for _ in range(workers - 1):
             if os.fork() == 0:
