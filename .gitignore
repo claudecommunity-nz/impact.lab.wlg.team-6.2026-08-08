@@ -1,16 +1,12 @@
-# Runtime signal log — local data, never committed.
-# Leading slash matters: an unanchored `data/` would also match web/data/,
-# which holds the baked basemap that the offline demo depends on.
+__pycache__/
+*.pyc
 /data/
 *.jsonl
-
-__pycache__/
-*.py[cod]
 .venv/
 venv/
-
 .DS_Store
 *.bak
 *.log
 .env
 .env.*
+__preview_*
