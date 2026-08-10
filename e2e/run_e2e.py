@@ -107,8 +107,30 @@ def main() -> int:
             expect(page.locator("#track-timeline")).to_contain_text(
                 "Council verified", timeout=10000)
 
+            # ── mobile: resident flow on a phone viewport
+            mob = browser.new_page(viewport={"width": 390, "height": 844},
+                                   is_mobile=True, has_touch=True)
+            mob.goto(BASE, wait_until="domcontentloaded")
+            mob.click("#gate-ok")
+            expect(mob.locator("#btn-report-fab")).to_be_visible()
+            mob.click("#sheet-handle")          # collapse: maximum map
+            expect(mob.locator("#panel-scroll")).to_be_hidden()
+            mob.click("#sheet-handle")
+            expect(mob.locator("#panel-scroll")).to_be_visible()
+            mob.click("#btn-help-fab")          # ask for help preset
+            # the "describe it instead of pinning" path — deterministic on
+            # touch, where synthetic map-canvas taps are unreliable
+            mob.click("#placing-banner")
+            expect(mob.locator("#drawer-wrap")).to_be_visible()
+            pressed = mob.locator('#category-chips .chip[aria-pressed="true"]')
+            expect(pressed).to_have_attribute("data-value", "welfare-need")
+            mob.fill("#description", "E2E mobile: neighbour needs water")
+            mob.click("#btn-submit")
+            mob.wait_for_url("**/?ref=*", timeout=15000)
+            expect(mob.locator("#track-timeline")).to_contain_text("Received")
+
             browser.close()
-        print("E2E OK: report -> track -> offer -> ops verify -> live update")
+        print("E2E OK: report -> track -> offer -> ops verify -> live update -> mobile")
         return 0
     finally:
         proc.terminate()

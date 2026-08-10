@@ -131,6 +131,7 @@ def init(db_path: str | Path) -> None:
                        (_new_public_id(db), row["ref"]))
     init_offers()
     init_settings()
+    init_bus()
 
 
 def _conn() -> sqlite3.Connection:
@@ -679,3 +680,61 @@ def apply_retention(*, contact_days: int = 90, photo_days: int = 365,
             db.execute("UPDATE reports SET photo=NULL WHERE ref=?", (r["ref"],))
             removed["photos"] += 1
     return removed
+
+
+# ---------------------------------------------------------------------------
+# event bus: SSE across worker processes. Each worker appends published
+# events here and polls for other workers' rows, so a live update reaches
+# every subscriber no matter which process their connection landed on
+# (the independent review found the in-process hub split deliveries).
+# ---------------------------------------------------------------------------
+
+
+def init_bus() -> None:
+    with _conn() as db:
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS bus (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                pid        INTEGER NOT NULL,
+                event      TEXT NOT NULL,
+                payload    TEXT NOT NULL,
+                ref        TEXT,
+                ops_only   INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+            """
+        )
+
+
+def bus_append(pid: int, event: str, payload: dict,
+               ref: str | None, ops_only: bool) -> None:
+    with _write_lock, _conn() as db:
+        db.execute(
+            "INSERT INTO bus (pid, event, payload, ref, ops_only, created_at)"
+            " VALUES (?,?,?,?,?,?)",
+            (pid, event, json.dumps(payload), ref, int(ops_only), _now()))
+
+
+def bus_cursor() -> int:
+    with _conn() as db:
+        row = db.execute("SELECT COALESCE(MAX(id),0) AS m FROM bus").fetchone()
+    return row["m"]
+
+
+def bus_after(cursor: int, exclude_pid: int) -> list[dict]:
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT id, event, payload, ref, ops_only FROM bus"
+            " WHERE id > ? AND pid != ? ORDER BY id LIMIT 500",
+            (cursor, exclude_pid)).fetchall()
+    return [{"id": r["id"], "event": r["event"],
+             "payload": json.loads(r["payload"]), "ref": r["ref"],
+             "ops_only": bool(r["ops_only"])} for r in rows]
+
+
+def bus_prune(keep_minutes: int = 10) -> None:
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(minutes=keep_minutes)).isoformat(timespec="seconds")
+    with _write_lock, _conn() as db:
+        db.execute("DELETE FROM bus WHERE created_at < ?", (cutoff,))

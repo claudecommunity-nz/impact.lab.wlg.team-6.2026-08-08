@@ -112,7 +112,20 @@ class Hub:
         * ref="WGN-..."        -> that reporter's stream only
         * neither              -> the public broadcast; the payload must
                                   already be sanitized (public_id, never ref)
+
+        Every publish also lands on the SQLite bus so subscribers held by
+        OTHER worker processes receive it (see _drain_bus).
         """
+        try:
+            store.bus_append(os.getpid(), event_type, payload, ref, ops_only)
+        except Exception as exc:
+            print(f"bus append failed: {exc!r}")
+        self.fanout(event_type, payload, ref=ref, ops_only=ops_only)
+
+    def fanout(self, event_type: str, payload: dict, *,
+               ref: str | None = None, ops_only: bool = False) -> None:
+        """Local-only delivery (used by publish and by the bus poller;
+        the poller must never re-append to the bus)."""
         with self._lock:
             subs = list(self._subs)
         for q, sub_ref, sub_ops in subs:
@@ -229,6 +242,8 @@ class Handler(BaseHTTPRequestHandler):
         if length is not None:
             self.send_header("Content-Length", str(length))
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Strict-Transport-Security",
+                         "max-age=31536000; includeSubDomains")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header(
             "Content-Security-Policy",
@@ -829,6 +844,30 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+def _drain_bus(hub: Hub, cursor: int) -> int:
+    """Fan out events appended by other worker processes. Returns the new
+    cursor. Pure function of (bus, cursor) for testability."""
+    for row in store.bus_after(cursor, os.getpid()):
+        hub.fanout(row["event"], row["payload"],
+                   ref=row["ref"], ops_only=row["ops_only"])
+        cursor = row["id"]
+    return cursor
+
+
+def _bus_loop() -> None:  # pragma: no cover - thread shell; _drain_bus is tested
+    cursor = store.bus_cursor()
+    last_prune = time.monotonic()
+    while True:
+        try:
+            cursor = _drain_bus(HUB, cursor)
+            if time.monotonic() - last_prune > 300:
+                store.bus_prune()
+                last_prune = time.monotonic()
+        except Exception as exc:
+            print(f"bus drain failed: {exc!r}")
+        time.sleep(0.7)
+
+
 def _retention_loop() -> None:  # pragma: no cover - process bootstrap; behaviour tested via store.apply_retention
     """Enforce the privacy review's retention schedule (IPP9), daily."""
     while True:
@@ -856,13 +895,6 @@ class _ReusePortServer(ThreadingHTTPServer):  # pragma: no cover - exercised by 
 
 def run(host: str = "127.0.0.1", port: int = 8146, workers: int = 1) -> None:  # pragma: no cover - subprocess entrypoint
     store.init(DATA_DIR / "kitea.db")
-    if workers > 1:
-        # The SSE hub is in-process: with N workers, a live-update event
-        # published in one worker never reaches subscribers connected to
-        # another (found by independent review). Multi-worker is for
-        # read-heavy stress only until a cross-process broker exists.
-        print("WARNING: --workers > 1 splits SSE delivery across processes; "
-              "live updates need a single worker (or a broker) in production")
     if workers > 1 and hasattr(os, "fork"):
         for _ in range(workers - 1):
             if os.fork() == 0:
@@ -870,6 +902,7 @@ def run(host: str = "127.0.0.1", port: int = 8146, workers: int = 1) -> None:  #
     server = _ReusePortServer((host, port), Handler)
     server.daemon_threads = True
     threading.Thread(target=_retention_loop, daemon=True).start()
+    threading.Thread(target=_bus_loop, daemon=True).start()
     if not os.environ.get("KITEA_OPS_KEY"):
         print(f"KITEA_OPS_KEY not set; generated ops key for this run: {OPS_KEY}")
     print(f"Kitea {__version__} — residents: http://{host}:{port}/   "

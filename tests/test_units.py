@@ -201,6 +201,43 @@ class TestHubDeliveryRules(unittest.TestCase):
         self.assertEqual(self.collect(q_public), [])
 
 
+class TestCrossProcessBus(unittest.TestCase):
+    """The independent review found SSE deliveries split across worker
+    processes; the SQLite bus is the fix. Simulate two workers: hub A
+    publishes, hub B drains the bus and its subscriber receives."""
+
+    def test_bus_carries_events_between_hubs(self):
+        store.init(server.DATA_DIR / "kitea.db")
+        hub_a, hub_b = server.Hub(), server.Hub()
+        q_public = hub_b.subscribe(None, ops=False)
+        q_reporter = hub_b.subscribe("WGN-CROSSPROC", ops=False)
+        cursor = store.bus_cursor()
+
+        hub_a.publish("item-updated", {"public_id": "K777777"})
+        hub_a.publish("status", {"ref": "WGN-CROSSPROC", "note": "x"},
+                      ref="WGN-CROSSPROC")
+
+        # the poller runs in another pid; simulate by draining with pid=-1
+        real_pid = server.os.getpid
+        server.os.getpid = lambda: -1
+        try:
+            new_cursor = server._drain_bus(hub_b, cursor)
+        finally:
+            server.os.getpid = real_pid
+        self.assertGreater(new_cursor, cursor)
+
+        import queue as q
+        def collect(qq):
+            out = []
+            try:
+                while True:
+                    out.append(qq.get_nowait())
+            except q.Empty:
+                return out
+        self.assertEqual([e for e, _ in collect(q_public)], ["item-updated"])
+        self.assertEqual([e for e, _ in collect(q_reporter)], ["status"])
+
+
 class TestStaticServing(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
