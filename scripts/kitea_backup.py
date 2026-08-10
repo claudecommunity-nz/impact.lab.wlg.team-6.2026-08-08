@@ -67,7 +67,8 @@ def verify(archive: Path) -> dict:
                     name = m.name.replace("\\", "/")
                     if name.startswith("/") or ".." in name or \
                             not name.startswith(("kitea.db", "uploads")):
-                        raise SystemExit(f"unexpected archive member: {m.name}")
+                        raise SystemExit(
+                            f"unexpected archive member: {m.name}") from None
                 tar.extractall(tmp)  # noqa: S202 (members validated above)
         db = sqlite3.connect(Path(tmp) / "kitea.db")
         integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
