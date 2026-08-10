@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Lint, tests, coverage, backup drill, load smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install CI tooling (runtime has zero dependencies)
+        run: pip install ruff coverage
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Tests with coverage
+        run: |
+          coverage run -m unittest discover tests -v
+          coverage report --fail-under=80
+          coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Backup + restore drill
+        run: |
+          mkdir -p /tmp/ci-data
+          KITEA_DATA_DIR=/tmp/ci-data python3 - <<'EOF'
+          import os
+          from kitea import store
+          store.init(os.environ["KITEA_DATA_DIR"] + "/kitea.db")
+          for i in range(5):
+              store.create_report(category="other", description=f"ci row {i}")
+          EOF
+          ARCHIVE=$(python3 scripts/kitea_backup.py backup --data /tmp/ci-data --out /tmp/ci-backups)
+          python3 scripts/kitea_backup.py verify --archive "$ARCHIVE"
+
+      - name: Load smoke (300 req, 20 concurrent, p95 budget)
+        run: python3 scripts/load_smoke.py

@@ -167,6 +167,7 @@ function initCanvas() {
   buildDrawer();
   const startPlacing = (preset) => {
     presetCategory = preset;
+    document.querySelector(".canvas-body").classList.add("sheet-collapsed");
     state.placing = true;
     $("placing-banner").classList.remove("hidden");
     $("btn-report-fab").classList.add("hidden");
@@ -179,6 +180,22 @@ function initCanvas() {
   $("placing-banner").addEventListener("click", () => { exitPlacing(); openDrawer(null); });
   $("panel-back").addEventListener("click", () => { state.selected = null;
     history.replaceState(null, "", "/"); renderPanel(); });
+
+  // bottom sheet: collapsible on mobile for maximum map
+  const body = document.querySelector(".canvas-body");
+  $("sheet-handle").addEventListener("click", () =>
+    body.classList.toggle("sheet-collapsed"));
+
+  // the data-courtesy note is closable; the choice sticks per browser
+  const foot = $("panel-foot"), reopen = $("foot-reopen");
+  const setFoot = (hidden) => {
+    foot.classList.toggle("hidden", hidden);
+    reopen.classList.toggle("hidden", !hidden);
+    try { localStorage.setItem("kitea-foot-hidden", hidden ? "1" : ""); } catch {}
+  };
+  try { if (localStorage.getItem("kitea-foot-hidden")) setFoot(true); } catch {}
+  $("foot-close").addEventListener("click", () => setFoot(true));
+  reopen.addEventListener("click", () => setFoot(false));
 
   loadReports().then(() => {
     const deep = params.get("item");
@@ -649,6 +666,7 @@ async function selectReportItem(publicId, fly) {
   try { item = await getJSON(`/api/items/${encodeURIComponent(publicId)}`); }
   catch { return; }
   state.selected = { kind: "report", public_id: publicId };
+  document.querySelector(".canvas-body").classList.remove("sheet-collapsed");
   history.replaceState(null, "", `/?item=${publicId}`);
   const mine = myReports().find(m => m.public_id === publicId);
   const prov = mine ? "mine" : item.verified ? "official" : "community";
@@ -791,6 +809,7 @@ function offerBlock(item, mine) {
 
 function selectFeedItem(info) {
   state.selected = { kind: "feed" };
+  document.querySelector(".canvas-body").classList.remove("sheet-collapsed");
   $("panel-back").classList.remove("hidden");
   $("panel-title").textContent = "Official information";
   const box = $("panel-scroll");

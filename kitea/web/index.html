@@ -54,12 +54,15 @@
     <div class="placing-banner hidden" id="placing-banner">Tap the map where it is</div>
 
     <aside class="panel" aria-label="List and detail panel">
+      <button class="sheet-handle" id="sheet-handle" aria-label="Expand or collapse the list"></button>
       <div class="panel-head">
         <button class="panel-back hidden" id="panel-back">‹ Back to list</button>
         <span class="panel-title" id="panel-title">On the map now</span>
+        <button class="foot-reopen hidden" id="foot-reopen" aria-label="Show data sources">ⓘ sources</button>
       </div>
       <div class="panel-scroll" id="panel-scroll"></div>
-      <div class="panel-foot">
+      <div class="panel-foot" id="panel-foot">
+        <button class="foot-close" id="foot-close" aria-label="Hide the data sources note">✕</button>
         Data courtesy of its publishers: GWRC (river &amp; rain telemetry) · WCC &amp; WREMO
         (hazard layers, Community Emergency Hubs) · NZTA Waka Kotahi (roads) · GeoNet /
         GNS Science (quakes) · NEMA (outages) · MetService (warnings, CC BY 4.0) ·

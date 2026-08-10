@@ -34,6 +34,11 @@ from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+# The stdlib default listen backlog is 5, which under even modest concurrent
+# load overflows and shows up as ~1s p95 latencies (TCP SYN retransmits).
+# Found by the load smoke; a real fix, not a benchmark tweak.
+ThreadingHTTPServer.request_queue_size = 128
+
 from . import __version__, feeds, store
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -57,6 +62,8 @@ _REF_RE = re.compile(r"^[A-Z]{2,5}-[A-Z2-9]{3,10}$")
 _LOOKUP_MISS_LIMIT = 30              # failed ref lookups per IP per hour
 
 OPS_KEY = os.environ.get("KITEA_OPS_KEY") or secrets.token_urlsafe(9)
+
+_STARTED = time.monotonic()
 
 _submits: dict[str, deque] = defaultdict(deque)
 _submits_lock = threading.Lock()
@@ -281,6 +288,17 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/uploads/"):
                 return self._send_static(UPLOAD_DIR, path[len("/uploads/"):])
 
+            if path == "/api/health":
+                try:
+                    total = store.stats()["total"]
+                    db_ok = True
+                except Exception:
+                    total, db_ok = None, False
+                body = {"ok": db_ok, "version": __version__,
+                        "mode": store.get_mode() if db_ok else None,
+                        "reports": total,
+                        "uptime_s": round(time.monotonic() - _STARTED)}
+                return self._send_json(body, status=200 if db_ok else 503)
             if path == "/api/meta":
                 return self._send_json({
                     "version": __version__,
@@ -378,8 +396,9 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             try:
                 self._error(500, f"internal error: {type(exc).__name__}")
-            except Exception:
-                pass
+            except Exception as send_exc:
+                # client hung up while we reported; log it, nothing to send to
+                print(f"ERROR-RESPONSE FAILED {self.path}: {send_exc!r}")
             print(f"ERROR {self.path}: {exc!r}")
 
     def do_POST(self) -> None:  # noqa: N802
@@ -448,8 +467,9 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             try:
                 self._error(500, f"internal error: {type(exc).__name__}")
-            except Exception:
-                pass
+            except Exception as send_exc:
+                # client hung up while we reported; log it, nothing to send to
+                print(f"ERROR-RESPONSE FAILED {self.path}: {send_exc!r}")
             print(f"ERROR {self.path}: {exc!r}")
 
     # -- endpoints ----------------------------------------------------------

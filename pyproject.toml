@@ -1,0 +1,24 @@
+[tool.ruff]
+# Lint the product and its tests; the event build and vendored SDK keep
+# their own conventions and are out of scope here.
+include = ["kitea/**/*.py", "tests/test_api.py", "tests/test_feeds.py",
+           "tests/test_backup_restore.py", "scripts/kitea_backup.py",
+           "scripts/load_smoke.py", "scripts/seed_demo.py"]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "S110", "S112", "S324", "S608"]
+ignore = [
+    "E402",  # tests set env vars before importing the app, deliberately
+    "E501",  # long lines allowed where readability wins; ruff format not used
+]
+
+[tool.coverage.run]
+source = ["kitea"]
+omit = ["kitea/__main__.py"]
+
+[tool.coverage.report]
+# The feeds builders talk to live agency APIs and are exercised against
+# production, not in unit tests; pure helpers and the cache ARE tested.
+exclude_lines = ["pragma: no cover", "if __name__"]
