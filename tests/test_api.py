@@ -153,9 +153,45 @@ class TestKitea(unittest.TestCase):
         })
         status, data = _request("GET", "/api/reports")
         self.assertEqual(status, 200)
-        row = next(r for r in data["reports"] if r["ref"] == rep["ref"])
-        for private_field in ("description", "contact", "photo", "hazard"):
+        row = next(r for r in data["reports"] if r["public_id"] == rep["public_id"])
+        # the ref is the reporter's credential and must NEVER appear publicly
+        for private_field in ("ref", "description", "contact", "photo", "hazard"):
             self.assertNotIn(private_field, row)
+
+    def test_verify_flow(self):
+        _, rep = _request("POST", "/api/reports",
+                          {"category": "flooding", "description": "verify me",
+                           "place_name": "Petone"})
+        ref, pid = rep["ref"], rep["public_id"]
+        self.assertFalse(rep["verified"])
+
+        # verification is an ops act
+        status, _ = _request("POST", f"/api/reports/{ref}/verify", {})
+        self.assertEqual(status, 401)
+        status, event = _request("POST", f"/api/reports/{ref}/verify",
+                                 {"note": "Crew confirmed on site"}, key=KEY)
+        self.assertEqual(status, 201)
+        self.assertEqual(event["public_id"], pid)
+
+        # the public item shows verified + a times-only timeline, no notes
+        status, item = _request("GET", f"/api/items/{pid}")
+        self.assertEqual(status, 200)
+        self.assertTrue(item["verified"])
+        self.assertNotIn("ref", item)
+        self.assertIn("verified", [t["status"] for t in item["timeline"]])
+        for t in item["timeline"]:
+            self.assertNotIn("note", t)
+
+        # the reporter sees the verification in their own history
+        _, view = _request("GET", f"/api/reports/{ref}")
+        self.assertIn("verified", [e["status"] for e in view["history"]])
+
+    def test_verified_not_a_lifecycle_status(self):
+        _, rep = _request("POST", "/api/reports",
+                          {"category": "other", "description": "status guard"})
+        status, _ = _request("POST", f"/api/reports/{rep['ref']}/status",
+                             {"status": "verified"}, key=KEY)
+        self.assertEqual(status, 400)
 
     # -- photo handling -------------------------------------------------------
 

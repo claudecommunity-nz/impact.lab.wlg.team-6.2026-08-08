@@ -97,13 +97,22 @@ class Hub:
 
     def publish(self, event_type: str, payload: dict, *,
                 ref: str | None = None, ops_only: bool = False) -> None:
+        """Delivery rules keep credentials out of the public stream:
+
+        * ops_only=True        -> ops subscribers only (full payloads)
+        * ref="WGN-..."        -> that reporter's stream only
+        * neither              -> the public broadcast; the payload must
+                                  already be sanitized (public_id, never ref)
+        """
         with self._lock:
             subs = list(self._subs)
         for q, sub_ref, sub_ops in subs:
             if ops_only and not sub_ops:
                 continue
-            if sub_ref is not None and ref != sub_ref:
+            if ref is not None and sub_ref != ref:
                 continue
+            if ref is None and not ops_only and sub_ref is not None:
+                continue  # reporter streams get targeted events only
             try:
                 q.put_nowait((event_type, payload))
             except queue.Full:
@@ -267,19 +276,27 @@ class Handler(BaseHTTPRequestHandler):
                     {"reports": store.list_reports(limit=limit, private=False)})
             m = re.fullmatch(r"/api/reports/([A-Z0-9-]{4,16})", path)
             if m:
-                # The ref code is the credential, so failed lookups are
-                # guessing attempts: throttle them per client.
-                ip = self._client_ip()
-                with _misses_lock:
-                    if len(_miss_window(ip)) >= _LOOKUP_MISS_LIMIT:
-                        return self._error(429, "too many failed lookups; "
-                                                "please wait before retrying")
                 rep = store.reporter_view(m.group(1))
                 if rep is None:
+                    # The ref code is the credential, so failed lookups are
+                    # guessing attempts: throttle misses per client. Valid
+                    # codes always resolve: a guesser sharing a reporter's
+                    # NAT must never lock the reporter out.
+                    ip = self._client_ip()
                     with _misses_lock:
-                        _miss_window(ip).append(time.monotonic())
+                        window = _miss_window(ip)
+                        if len(window) >= _LOOKUP_MISS_LIMIT:
+                            return self._error(429, "too many failed lookups; "
+                                                    "please wait before retrying")
+                        window.append(time.monotonic())
                     return self._error(404, "no report with that reference code")
                 return self._send_json(rep)
+            m = re.fullmatch(r"/api/items/(K[A-Z2-9]{4,10})", path)
+            if m:
+                item = store.get_public_item(m.group(1))
+                if item is None:
+                    return self._error(404, "no item with that id")
+                return self._send_json(item)
             m = re.fullmatch(r"/api/feeds/(\w{1,32})", path)
             if m:
                 envelope = feeds.get(m.group(1))
@@ -337,6 +354,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not self._is_ops(query):
                     return self._error(401, "ops key required")
                 return self._set_status(m.group(1), body)
+            m = re.fullmatch(r"/api/reports/([A-Z0-9-]{4,16})/verify", path)
+            if m:
+                if not self._is_ops(query):
+                    return self._error(401, "ops key required")
+                return self._verify(m.group(1), body)
             return self._error(404, "not found")
         except BrokenPipeError:
             pass
@@ -415,9 +437,10 @@ class Handler(BaseHTTPRequestHandler):
             ).start()
 
         public = {k: report[k] for k in
-                  ("ref", "created_at", "category", "lat", "lng",
-                   "place_name", "reporter_role", "status")}
-        HUB.publish("report", public)
+                  ("public_id", "created_at", "category", "lat", "lng",
+                   "place_name", "reporter_role", "status", "verified")}
+        HUB.publish("report", public)                      # public broadcast, no ref
+        HUB.publish("report", {**public, "ref": report["ref"]}, ops_only=True)
         self._send_json(report, status=201)
 
     def _save_photo(self, photo_b64: str) -> str | None:
@@ -458,6 +481,22 @@ class Handler(BaseHTTPRequestHandler):
             return self._error(400, str(exc))
         HUB.publish("status", event, ref=ref)
         HUB.publish("status", event, ops_only=True)
+        HUB.publish("item-updated", {"public_id": event["public_id"],
+                                     "status": event["status"],
+                                     "created_at": event["created_at"]})
+        self._send_json(event, status=201)
+
+    def _verify(self, ref: str, body: dict) -> None:
+        try:
+            event = store.verify_report(ref, note=str(body.get("note") or ""),
+                                        actor="ops")
+        except KeyError:
+            return self._error(404, "no report with that reference code")
+        HUB.publish("verified", event, ref=ref)
+        HUB.publish("verified", event, ops_only=True)
+        HUB.publish("item-updated", {"public_id": event["public_id"],
+                                     "verified": True,
+                                     "created_at": event["created_at"]})
         self._send_json(event, status=201)
 
     _hazard_cache: dict[tuple, tuple[float, dict]] = {}

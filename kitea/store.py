@@ -61,6 +61,7 @@ def init(db_path: str | Path) -> None:
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS reports (
                 ref            TEXT PRIMARY KEY,
+                public_id      TEXT UNIQUE,
                 created_at     TEXT NOT NULL,
                 category       TEXT NOT NULL,
                 description    TEXT NOT NULL,
@@ -71,7 +72,8 @@ def init(db_path: str | Path) -> None:
                 contact        TEXT,
                 photo          TEXT,
                 hazard         TEXT,
-                current_status TEXT NOT NULL DEFAULT 'received'
+                current_status TEXT NOT NULL DEFAULT 'received',
+                verified       INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS status_events (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,6 +86,15 @@ def init(db_path: str | Path) -> None:
             CREATE INDEX IF NOT EXISTS idx_events_ref ON status_events(ref, id);
             """
         )
+        # v1 -> v2 migration for databases created before public_id/verified.
+        cols = {r["name"] for r in db.execute("PRAGMA table_info(reports)")}
+        if "public_id" not in cols:
+            db.execute("ALTER TABLE reports ADD COLUMN public_id TEXT")
+        if "verified" not in cols:
+            db.execute("ALTER TABLE reports ADD COLUMN verified INTEGER NOT NULL DEFAULT 0")
+        for row in db.execute("SELECT ref FROM reports WHERE public_id IS NULL").fetchall():
+            db.execute("UPDATE reports SET public_id=? WHERE ref=?",
+                       (_new_public_id(db), row["ref"]))
 
 
 def _conn() -> sqlite3.Connection:
@@ -96,6 +107,18 @@ def _conn() -> sqlite3.Connection:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _new_public_id(db: sqlite3.Connection) -> str:
+    """Public map identifier. Deliberately a DIFFERENT namespace from the
+    reference code: the ref is the reporter's credential and never appears
+    on public surfaces; the public id carries no access at all.
+    """
+    for _ in range(50):
+        pid = "K" + "".join(secrets.choice(_CODE_ALPHABET) for _ in range(6))
+        if db.execute("SELECT 1 FROM reports WHERE public_id=?", (pid,)).fetchone() is None:
+            return pid
+    raise RuntimeError("could not allocate a public id")
 
 
 def _new_ref(db: sqlite3.Connection) -> str:
@@ -153,11 +176,12 @@ def create_report(
     now = _now()
     with _write_lock, _conn() as db:
         ref = _new_ref(db)
+        public_id = _new_public_id(db)
         db.execute(
-            "INSERT INTO reports (ref, created_at, category, description, lat, lng,"
-            " place_name, reporter_role, contact, photo, current_status)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?, 'received')",
-            (ref, now, category, description, lat, lng, place_name,
+            "INSERT INTO reports (ref, public_id, created_at, category, description,"
+            " lat, lng, place_name, reporter_role, contact, photo, current_status)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?, 'received')",
+            (ref, public_id, now, category, description, lat, lng, place_name,
              reporter_role, contact, photo),
         )
         db.execute(
@@ -174,7 +198,7 @@ def add_status(ref: str, status: str, note: str = "", actor: str = "ops") -> dic
     note = (note or "").strip()[:_NOTE_MAX]
     now = _now()
     with _write_lock, _conn() as db:
-        row = db.execute("SELECT ref FROM reports WHERE ref=?", (ref,)).fetchone()
+        row = db.execute("SELECT public_id FROM reports WHERE ref=?", (ref,)).fetchone()
         if row is None:
             raise KeyError(ref)
         db.execute(
@@ -183,7 +207,30 @@ def add_status(ref: str, status: str, note: str = "", actor: str = "ops") -> dic
             (ref, status, note, actor, now),
         )
         db.execute("UPDATE reports SET current_status=? WHERE ref=?", (status, ref))
-    return {"ref": ref, "status": status, "note": note, "actor": actor, "created_at": now}
+    return {"ref": ref, "public_id": row["public_id"], "status": status,
+            "note": note, "actor": actor, "created_at": now}
+
+
+def verify_report(ref: str, note: str = "", actor: str = "ops") -> dict:
+    """Mark a report council-verified. A verification is an append-only
+    event like everything else: it records who and when, and it is what
+    promotes the report's pin to 'official' on the public map. It does not
+    touch the response status lifecycle.
+    """
+    note = (note or "").strip()[:_NOTE_MAX]
+    now = _now()
+    with _write_lock, _conn() as db:
+        row = db.execute("SELECT public_id FROM reports WHERE ref=?", (ref,)).fetchone()
+        if row is None:
+            raise KeyError(ref)
+        db.execute(
+            "INSERT INTO status_events (ref, status, note, actor, created_at)"
+            " VALUES (?, 'verified', ?, ?, ?)",
+            (ref, note, actor, now),
+        )
+        db.execute("UPDATE reports SET verified=1 WHERE ref=?", (ref,))
+    return {"ref": ref, "public_id": row["public_id"], "status": "verified",
+            "note": note, "actor": actor, "created_at": now}
 
 
 def set_hazard(ref: str, hazard: dict) -> None:
@@ -198,7 +245,7 @@ def set_hazard(ref: str, hazard: dict) -> None:
 
 def _row_to_report(row: sqlite3.Row, private: bool) -> dict:
     rep = {
-        "ref": row["ref"],
+        "public_id": row["public_id"],
         "created_at": row["created_at"],
         "category": row["category"],
         "lat": row["lat"],
@@ -206,12 +253,15 @@ def _row_to_report(row: sqlite3.Row, private: bool) -> dict:
         "place_name": row["place_name"],
         "reporter_role": row["reporter_role"],
         "status": row["current_status"],
+        "verified": bool(row["verified"]),
     }
     if private:
-        # Description, photo, contact and hazard context are ops/reporter
-        # detail. The public view stays at category + place + status so a
-        # reporter never accidentally publishes a phone number they typed
-        # into the description.
+        # The ref is the reporter's credential: it appears ONLY in private
+        # views. Description, photo, contact and hazard context are
+        # ops/reporter detail. The public view stays at category + place +
+        # status so a reporter never accidentally publishes a phone number
+        # they typed into the description.
+        rep["ref"] = row["ref"]
         rep["description"] = row["description"]
         rep["contact"] = row["contact"]
         rep["photo"] = row["photo"]
@@ -233,6 +283,26 @@ def get_report(ref: str, private: bool = False) -> dict | None:
             )
         ]
     return rep
+
+
+def get_public_item(public_id: str) -> dict | None:
+    """The public item page: what anyone may see about a report from its
+    public id. Status/verified timeline with times only; ops notes are for
+    the reporter, not the world.
+    """
+    with _conn() as db:
+        row = db.execute("SELECT * FROM reports WHERE public_id=?", (public_id,)).fetchone()
+        if row is None:
+            return None
+        item = _row_to_report(row, private=False)
+        item["timeline"] = [
+            {"status": r["status"], "created_at": r["created_at"]}
+            for r in db.execute(
+                "SELECT status, created_at FROM status_events"
+                " WHERE ref=? ORDER BY id", (row["ref"],),
+            )
+        ]
+    return item
 
 
 def reporter_view(ref: str) -> dict | None:

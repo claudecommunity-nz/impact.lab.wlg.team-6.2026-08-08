@@ -260,7 +260,14 @@ function renderQueue() {
     const when = document.createElement("span");
     when.className = "when";
     when.textContent = agoText(r.created_at) + " ago";
-    bot.append(pill, when);
+    bot.append(pill);
+    if (r.verified) {
+      const v = document.createElement("span");
+      v.className = "vbadge";
+      v.textContent = "✓ verified";
+      bot.append(v);
+    }
+    bot.append(when);
 
     card.append(top, mid, bot);
     box.append(card);
@@ -274,7 +281,8 @@ function renderReportMarkers() {
   for (const r of state.reports) {
     if (r.lat == null || r.lng == null) continue;
     const el = document.createElement("div");
-    el.className = "report-pin" + (r.status !== "resolved" ? " big" : "");
+    el.className = "report-pin" + (r.status !== "resolved" ? " big" : "") +
+                   (r.verified ? " pin-verified" : "");
     el.style.background = STATUS_COLOR[r.status] || "#9AA8B5";
     el.title = `${r.ref} ${r.category}`;
     el.addEventListener("click", (e) => { e.stopPropagation(); selectReport(r.ref, false); });
@@ -317,6 +325,13 @@ async function renderDetail(ref, scrollTop) {
   pill.className = `pill ${rep.status}`;
   pill.textContent = STATUS_LABEL[rep.status];
   box.append(pill);
+  if (rep.verified) {
+    const v = document.createElement("span");
+    v.className = "vbadge";
+    v.style.marginLeft = "6px";
+    v.textContent = "✓ council-verified";
+    box.append(v);
+  }
 
   const desc = document.createElement("div");
   desc.className = "detail-desc";
@@ -366,6 +381,21 @@ async function renderDetail(ref, scrollTop) {
     actions.append(b);
   }
   box.append(actions);
+
+  if (!rep.verified) {
+    const vb = document.createElement("button");
+    vb.className = "verify-btn";
+    vb.textContent = "🛡 Verify: confirm this is real. Its pin becomes official on the public map";
+    vb.addEventListener("click", async () => {
+      vb.disabled = true;
+      try {
+        await api(`/api/reports/${encodeURIComponent(rep.ref)}/verify`,
+          { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ note: ($("status-note") && $("status-note").value.trim()) || "" }) });
+      } catch (ex) { alert(ex.message); vb.disabled = false; }
+    });
+    box.append(vb);
+  }
 
   const note = document.createElement("input");
   note.className = "status-note";
@@ -454,6 +484,7 @@ function openStream() {
   es.onerror = () => { $("sse-state").textContent = "reconnecting…"; };
   es.addEventListener("report", refreshReports);
   es.addEventListener("status", refreshReports);
+  es.addEventListener("verified", refreshReports);
   es.addEventListener("report-updated", refreshReports);
 }
 

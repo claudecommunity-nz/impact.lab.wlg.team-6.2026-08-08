@@ -3,15 +3,115 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kitea: report local conditions to the council, and see it actioned</title>
-<meta name="description" content="Report flooding, slips and damage to the council in under a minute, get a reference code, and watch your report being actioned live.">
+<title>Kitea: Wellington's community-council map. Report it, track it, see it actioned</title>
+<meta name="description" content="One live map of what Wellington is reporting to the council and what is officially confirmed. Report in under a minute, get a reference code, watch it actioned.">
 <link rel="stylesheet" href="/static/vendor/maplibre-gl.css">
 <link rel="stylesheet" href="/static/kitea.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='5' fill='%23F2B705'/%3E%3Cpath d='M16 4a12 12 0 0 1 12 12' stroke='%2314524A' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Cpath d='M16 28A12 12 0 0 1 4 16' stroke='%2314524A' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
 </head>
-<body>
-<div class="shell">
+<body class="canvas">
 
+<!-- ================= canvas view (default) ================= -->
+<div id="view-canvas" style="display:contents">
+
+  <header class="canvas-head">
+    <svg class="brandmark" width="34" height="34" viewBox="0 0 32 32" aria-hidden="true">
+      <circle cx="16" cy="16" r="5" fill="#F2B705"/>
+      <path d="M16 4a12 12 0 0 1 12 12" stroke="#14524A" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <path d="M16 28A12 12 0 0 1 4 16" stroke="#14524A" stroke-width="3" fill="none" stroke-linecap="round"/>
+    </svg>
+    <div>
+      <div class="brand-name">Kitea</div>
+      <div class="brand-tag">Wellington, seen.</div>
+    </div>
+    <nav class="lenses" id="lenses" aria-label="Show on the map"></nav>
+    <div class="masthead-right">
+      <span id="live-tag" class="live-tag"><span class="live-dot"></span><span id="live-tag-text">connecting…</span></span>
+    </div>
+  </header>
+
+  <div class="notice-slim" role="note">
+    ⚠️ In a life-threatening emergency call 111. Prototype using public hazard-planning data.
+  </div>
+
+  <div class="chipsbar" id="chipsbar" role="group" aria-label="Filter by type"></div>
+
+  <div class="canvas-body">
+    <div id="canvas-map" role="application" aria-label="Live map of reports and official information"></div>
+    <button id="btn-report-fab">+ Report something</button>
+    <div class="placing-banner hidden" id="placing-banner">Tap the map where it is</div>
+
+    <aside class="panel" aria-label="List and detail panel">
+      <div class="panel-head">
+        <button class="panel-back hidden" id="panel-back">‹ Back to list</button>
+        <span class="panel-title" id="panel-title">On the map now</span>
+      </div>
+      <div class="panel-scroll" id="panel-scroll"></div>
+      <div class="panel-foot">
+        Data courtesy of its publishers: GWRC (river &amp; rain telemetry) · WCC &amp; WREMO
+        (hazard layers, Community Emergency Hubs) · NZTA Waka Kotahi (roads) · GeoNet /
+        GNS Science (quakes) · NEMA (outages) · MetService (warnings, CC BY 4.0) ·
+        Basemap © OpenStreetMap contributors. Prototype from Impact Lab Wellington 2026 · MIT.
+      </div>
+    </aside>
+  </div>
+
+  <!-- report drawer -->
+  <div class="drawer-wrap hidden" id="drawer-wrap">
+    <div class="drawer" role="dialog" aria-modal="true" aria-label="Report something to the council">
+      <div class="drawer-head">
+        <h2>Report it. Track it.</h2>
+        <button class="drawer-close" id="drawer-close">✕ Close</button>
+      </div>
+      <div class="pin-state unset" id="pin-state">No map pin yet. Close this and tap the map, or just describe the place below.</div>
+      <div class="hazard-hint hidden" id="hazard-hint" aria-live="polite"></div>
+
+      <form class="card" id="report-form" novalidate>
+        <div class="step">
+          <div class="step-label"><span class="step-num">1</span><span id="lbl-what">What's happening?</span></div>
+          <div class="step-body">
+            <div class="chips" id="category-chips" role="group" aria-labelledby="lbl-what"></div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-label"><span class="step-num">2</span>Tell us more</div>
+          <div class="step-body">
+            <label class="field">What can you see?
+              <textarea id="description" name="description" maxlength="2000" required
+                placeholder="e.g. Water is coming over the road and rising. Two cars turned around."></textarea>
+            </label>
+            <label class="field">Place name <span class="optional">(helps crews find it)</span>
+              <input type="text" id="place-name" maxlength="200"
+                     placeholder="e.g. Hutt Rd near the Caltex, Petone" autocomplete="off">
+            </label>
+            <label class="field">Add a photo <span class="optional">(optional, it helps a lot)</span>
+              <input type="file" id="photo" accept="image/*">
+            </label>
+            <label class="field">I'm reporting as
+              <select id="reporter-role">
+                <option value="resident">A resident</option>
+                <option value="community-group">A community group</option>
+                <option value="emergency-hub">A Community Emergency Hub</option>
+                <option value="on-behalf">On behalf of someone else</option>
+              </select>
+            </label>
+            <label class="field">Contact <span class="optional">(optional, only council staff can see it)</span>
+              <input type="text" id="contact" maxlength="200" placeholder="phone or email, if you're happy to be contacted" autocomplete="off">
+            </label>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary" id="btn-submit">Send to the council</button>
+        <div class="form-error hidden" id="form-error" role="alert"></div>
+        <p class="privacy-note">What appears publicly: the category, general location
+        and status, so neighbours can see it's known about. Your description, photo
+        and contact details are visible to council staff only.</p>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ================= tracking view (?ref=) ================= -->
+<main id="view-track" class="hidden shell" style="overflow-y:auto">
   <header class="masthead">
     <svg class="brandmark" width="44" height="44" viewBox="0 0 32 32" aria-hidden="true">
       <circle cx="16" cy="16" r="5" fill="#F2B705"/>
@@ -22,132 +122,34 @@
       <div class="brand-name">Kitea</div>
       <div class="brand-tag">Your report, seen.</div>
     </div>
-    <div class="masthead-right">
-      <span id="live-tag" class="live-tag"><span class="live-dot"></span><span id="live-tag-text">community channel</span></span>
-    </div>
   </header>
 
-  <!-- ============ report form view ============ -->
-  <main id="view-form">
-    <section class="hero">
-      <h1>Tell the council what's happening, and <em>see it actioned</em>.</h1>
-      <p>Flooding, slips, damage, a neighbour who needs help. Your report lands
-      on the council's live operating map, and you can watch its status without
-      calling anyone. Kia ora, Wellington.</p>
-    </section>
-
-    <div class="notice-111" role="note">
-      <span aria-hidden="true">⚠️</span>
-      <div><strong>If life or property is in danger, call 111 now.</strong>
-      This channel is for local conditions the council should know about;
-      it is not monitored like an emergency line. This is a prototype using
-      public hazard-planning data.</div>
+  <div class="ticket">
+    <h2 id="track-heading">Your report is in.</h2>
+    <p class="sub">This is your reference code. Keep it: it's how you check on this report, and how you quote it if you ring the council. It is yours alone; the map shows this report under a separate public label.</p>
+    <div class="ref-code" id="track-ref">WGN-········</div>
+    <div class="keep" id="track-summary"></div>
+    <div class="ticket-actions">
+      <button type="button" class="btn" id="btn-copy-link">Copy tracking link</button>
+      <a class="btn" href="/" id="btn-new-report">Back to the map</a>
     </div>
+  </div>
 
-    <form class="card" id="report-form" novalidate>
-      <div class="step">
-        <div class="step-label"><span class="step-num">1</span><span id="lbl-what">What's happening?</span></div>
-        <p class="step-hint">Pick the closest match.</p>
-        <div class="step-body">
-          <div class="chips" id="category-chips" role="group" aria-labelledby="lbl-what"></div>
-        </div>
-      </div>
+  <h2 class="section-title" style="display:flex;align-items:center;gap:12px">
+    Where it's up to
+    <span class="live-tag" id="track-live"><span class="live-dot"></span><span id="track-live-text">connecting…</span></span>
+  </h2>
+  <p class="section-sub">This page updates by itself the moment the council acts. No need to refresh or call.</p>
+  <ol class="timeline" id="track-timeline" aria-live="polite"></ol>
 
-      <div class="step">
-        <div class="step-label"><span class="step-num">2</span>Where is it?</div>
-        <p class="step-hint">Tap the map to drop a pin, or use your location.</p>
-        <div class="step-body">
-          <div id="pick-map" role="application" aria-label="Map: tap to mark the location of what you are reporting"></div>
-          <div class="map-actions">
-            <button type="button" class="btn" id="btn-locate">📍 Use my location</button>
-          </div>
-          <label class="field">Place name <span class="optional">(helps crews find it)</span>
-            <input type="text" id="place-name" name="place_name" maxlength="200"
-                   placeholder="e.g. Hutt Rd near the Caltex, Petone" autocomplete="off">
-          </label>
-          <div class="hazard-hint hidden" id="hazard-hint" aria-live="polite"></div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-label"><span class="step-num">3</span>Tell us more</div>
-        <div class="step-body">
-          <label class="field">What can you see?
-            <textarea id="description" name="description" maxlength="2000" required
-              placeholder="e.g. Water is coming over the road and rising. Two cars turned around."></textarea>
-          </label>
-          <label class="field">Add a photo <span class="optional">(optional, it helps a lot)</span>
-            <input type="file" id="photo" accept="image/*">
-          </label>
-          <label class="field">I'm reporting as
-            <select id="reporter-role">
-              <option value="resident">A resident</option>
-              <option value="community-group">A community group</option>
-              <option value="emergency-hub">A Community Emergency Hub</option>
-              <option value="on-behalf">On behalf of someone else</option>
-            </select>
-          </label>
-          <label class="field">Contact <span class="optional">(optional, only council staff can see it)</span>
-            <input type="text" id="contact" maxlength="200" placeholder="phone or email, if you're happy to be contacted" autocomplete="off">
-          </label>
-        </div>
-      </div>
-
-      <button type="submit" class="btn btn-primary" id="btn-submit">Send to the council</button>
-      <div class="form-error hidden" id="form-error" role="alert"></div>
-      <p class="privacy-note">What appears publicly: the category, general
-      location and status, so neighbours can see it's known about. Your
-      description, photo and contact details are visible to council staff only.</p>
-    </form>
-
-    <section id="mine-section" class="hidden">
-      <h2 class="section-title">Your reports</h2>
-      <p class="section-sub">Saved on this device. Tap one to see its live status.</p>
-      <div class="report-rows" id="mine-rows"></div>
-    </section>
-
-    <section>
-      <h2 class="section-title">Reported nearby</h2>
-      <p class="section-sub">What Wellington has told the council recently, and where each report is up to.</p>
-      <div class="report-rows" id="public-rows"><div class="rows-empty">Loading…</div></div>
-    </section>
-  </main>
-
-  <!-- ============ tracking view ============ -->
-  <main id="view-track" class="hidden">
-    <div class="ticket">
-      <h2 id="track-heading">Your report is in.</h2>
-      <p class="sub">This is your reference code. Keep it: it's how you check on this report, and how you quote it if you ring the council.</p>
-      <div class="ref-code" id="track-ref">WGN-····</div>
-      <div class="keep" id="track-summary"></div>
-      <div class="ticket-actions">
-        <button type="button" class="btn" id="btn-copy-link">Copy tracking link</button>
-        <a class="btn" href="/" id="btn-new-report">Report something else</a>
-      </div>
-    </div>
-
-    <h2 class="section-title" style="display:flex;align-items:center;gap:12px">
-      Where it's up to
-      <span class="live-tag" id="track-live"><span class="live-dot"></span><span id="track-live-text">connecting…</span></span>
-    </h2>
-    <p class="section-sub">This page updates by itself the moment the council acts. No need to refresh or call.</p>
-    <ol class="timeline" id="track-timeline" aria-live="polite"></ol>
-
-    <div class="hazard-hint hidden" id="track-hub"></div>
-    <div class="form-error hidden" id="track-error" role="alert"></div>
-  </main>
+  <div class="hazard-hint hidden" id="track-hub"></div>
+  <div class="form-error hidden" id="track-error" role="alert"></div>
 
   <footer>
-    <strong>Kitea</strong> is a working prototype from Impact Lab Wellington 2026
-    (Problem 02: a two-way information channel between communities and council).
-    It uses hazard-planning data, not live emergency information. In an emergency, call 111.<br>
-    Live data courtesy of its publishers: Greater Wellington Regional Council
-    (river &amp; rain telemetry), Wellington City Council &amp; WREMO (hazard layers,
-    Community Emergency Hubs), NZ Transport Agency Waka Kotahi (roads),
-    GeoNet / GNS Science (earthquakes), NEMA (electricity outages),
-    MetService (weather warnings, CC BY 4.0). Basemap © OpenStreetMap contributors.
+    In a life-threatening emergency call 111. Prototype using public
+    hazard-planning data, from Impact Lab Wellington 2026.
   </footer>
-</div>
+</main>
 
 <script src="/static/vendor/maplibre-gl.js"></script>
 <script src="/static/app.js"></script>

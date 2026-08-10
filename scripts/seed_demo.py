@@ -65,6 +65,13 @@ ADVANCE = {
     6: [("reviewing", ""), ("responding", "Sandbags topped up; sucker truck booked.")],
 }
 
+# ref index -> verification note; these show as official on the public map
+VERIFY = {
+    0: "Roading crew on site confirmed water over both lanes.",
+    2: "Arborist crew confirmed and cleared.",
+    5: "Wellington Water confirmed low pressure in the area.",
+}
+
 
 def post(path: str, body: dict, with_key: bool = False) -> dict:
     req = urllib.request.Request(
@@ -88,6 +95,10 @@ def main() -> None:
             post(f"/api/reports/{rep['ref']}/status",
                  {"status": status, "note": note}, with_key=True)
             print(f"        -> {status}")
+        if i in VERIFY:
+            post(f"/api/reports/{rep['ref']}/verify",
+                 {"note": VERIFY[i]}, with_key=True)
+            print("        -> verified")
     print(f"\nSeeded {len(refs)} reports. Track the first one at {BASE}/?ref={refs[0]}")
 
 
