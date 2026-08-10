@@ -635,3 +635,19 @@ body:not(.canvas) .demo-banner { margin: 0 -20px; }
   background: var(--pine); color: #fff; border: none; border-radius: 8px;
   padding: 13px; cursor: pointer; font-size: 16px;
 }
+
+/* ---- council commentary beside official data --------------------------- */
+.commentary {
+  margin-top: 14px; padding: 12px 14px; border-radius: 10px;
+  background: var(--pine-soft); border: 1px solid #CBDDD5;
+  border-left: 4px solid var(--pine);
+}
+.commentary h4 {
+  font-family: var(--sans); font-weight: 700; font-size: 14px;
+  color: var(--pine-deep); margin: 0 0 8px;
+}
+.commentary-item { padding: 8px 0; border-top: 1px solid #D5E2DB; }
+.commentary-item:first-of-type { border-top: none; padding-top: 0; }
+.commentary-item .c-t { font-weight: 700; font-size: 14px; }
+.commentary-item .c-b { font-size: 13.5px; color: var(--ink-soft); margin-top: 2px; }
+.commentary-item .c-w { font-size: 12px; color: var(--ink-mute); margin-top: 3px; }

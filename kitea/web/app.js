@@ -547,7 +547,7 @@ function renderPanel() {
         el: feedRow("🌬️", w.title, w.area || "MetService warning", null,
           () => selectFeedItem({ type: "weather", title: w.title,
             sub: `${w.area || ""}${w.onset ? " · from " + fmtTime(w.onset) : ""}${w.expires ? " until " + fmtTime(w.expires) : ""}`,
-            attribution: "MetService (CC BY 4.0)", when: w.published, link: w.link })) });
+            attribution: "MetService (CC BY 4.0)", when: w.published, link: w.link }), "weather") });
     }
     for (const q of ((state.feeds.quakes || {}).items || []).slice(0, 5)) {
       if (!state.types.has("quakes")) continue;
@@ -555,13 +555,13 @@ function renderPanel() {
         `${q.depth_km} km deep`, q.time,
         () => selectFeedItem({ type: "quakes", title: `M${q.magnitude} ${q.locality}`,
           sub: `${q.depth_km} km deep · felt intensity ${q.mmi}`,
-          attribution: "GeoNet (GNS Science)", when: q.time, link: q.link })) });
+          attribution: "GeoNet (GNS Science)", when: q.time, link: q.link }), "quakes") });
     }
     for (const o of ((state.feeds.outages || {}).items || [])) {
       if (!state.types.has("power")) continue;
       rows.push({ time: o.start || new Date().toISOString(),
         el: feedRow("⚡", `Outage: ${o.location || "unnamed"}`,
-          `${o.affected || "?"} customers`, o.start, null) });
+          `${o.affected || "?"} customers`, o.start, null, "power") });
     }
     const delayFeats = (((state.feeds.delays || {}).geojson) || {}).features || [];
     for (const f of delayFeats.slice(0, 8)) {
@@ -633,9 +633,10 @@ function reportRow(r, prov) {
   return b;
 }
 
-function feedRow(icon, title, sub, when, onClick) {
+function feedRow(icon, title, sub, when, onClick, type) {
   const b = document.createElement("button");
   b.className = "item-row";
+  if (type && hasCommentary(type)) sub = (sub ? sub + " · " : "") + "📢 council note";
   const ic = document.createElement("span");
   ic.className = "ic"; ic.textContent = icon;
   const main = document.createElement("span");
@@ -807,6 +808,14 @@ function offerBlock(item, mine) {
   return wrap;
 }
 
+function commentaryFor(type) {
+  return state.comms.filter(c => c.comms_type === type);
+}
+
+function hasCommentary(type) {
+  return commentaryFor(type).length > 0;
+}
+
 function selectFeedItem(info) {
   state.selected = { kind: "feed" };
   document.querySelector(".canvas-body").classList.remove("sheet-collapsed");
@@ -838,6 +847,32 @@ function selectFeedItem(info) {
     a.href = info.link; a.target = "_blank"; a.rel = "noopener";
     a.textContent = "View at the source";
     d.append(a);
+  }
+
+  // The council's voice sits right beside the official data: any active
+  // council update of the same type appears here in full.
+  const notes = info.attribution === "Council update" ? [] : commentaryFor(info.type);
+  if (notes.length) {
+    const cb = document.createElement("div");
+    cb.className = "commentary";
+    const h = document.createElement("h4");
+    h.textContent = "📢 What the council says";
+    cb.append(h);
+    for (const c of notes) {
+      const item = document.createElement("div");
+      item.className = "commentary-item";
+      const ct = document.createElement("div");
+      ct.className = "c-t"; ct.textContent = c.title;
+      const cbdy = document.createElement("div");
+      cbdy.className = "c-b"; cbdy.textContent = c.body;
+      const cw = document.createElement("div");
+      cw.className = "c-w";
+      cw.textContent = agoText(c.created_at) +
+        (c.expires_at ? ` · until ${fmtTime(c.expires_at)}` : "");
+      item.append(ct, cbdy, cw);
+      cb.append(item);
+    }
+    d.append(cb);
   }
   box.append(d);
 }
