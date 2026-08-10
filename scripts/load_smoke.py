@@ -27,6 +27,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -68,14 +69,26 @@ def main() -> int:
         else:
             raise SystemExit("server never came up")
 
-        # seed rows so the list endpoint does real work
+        # seed rows so the list endpoint does real work. Retry on the rare
+        # multi-writer contention window rather than fail the whole run on
+        # one seed POST (the busy_timeout makes this near-impossible, but a
+        # seed is setup, not the thing under test).
+        def seed_post(req):
+            for attempt in range(5):
+                try:
+                    return urllib.request.urlopen(req, timeout=15).read()
+                except urllib.error.HTTPError as exc:
+                    if exc.code >= 500 and attempt < 4:
+                        time.sleep(0.3)
+                        continue
+                    raise
         for i in range(25):
             req = urllib.request.Request(
                 f"{base}/api/reports",
                 data=json.dumps({"category": "other",
                                  "description": f"load row {i}"}).encode(),
                 headers={"Content-Type": "application/json"})
-            urllib.request.urlopen(req, timeout=10).read()
+            seed_post(req)
 
         # Generate load with curl PROCESSES: a threaded Python client shares
         # one GIL and measures its own contention (observed: server p50

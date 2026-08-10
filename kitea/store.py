@@ -137,7 +137,12 @@ def init(db_path: str | Path) -> None:
 def _conn() -> sqlite3.Connection:
     if _db_path is None:
         raise RuntimeError("store.init(db_path) has not been called")
-    db = sqlite3.connect(_db_path, timeout=10)
+    db = sqlite3.connect(_db_path, timeout=15)
+    # Explicit busy handler: with multiple worker processes sharing this
+    # file (SO_REUSEPORT), two writers must serialise. 15s of waiting
+    # covers thousands of sub-millisecond write transactions, so a
+    # concurrent writer waits instead of surfacing "database is locked".
+    db.execute("PRAGMA busy_timeout=15000")
     db.row_factory = sqlite3.Row
     return db
 
