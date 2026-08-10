@@ -59,7 +59,16 @@ def backup(data_dir: Path, out_dir: Path) -> Path:
 def verify(archive: Path) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         with tarfile.open(archive, "r:gz") as tar:
-            tar.extractall(tmp, filter="data")
+            try:
+                tar.extractall(tmp, filter="data")
+            except TypeError:
+                # Python < 3.11.4 has no filter=; validate members manually
+                for m in tar.getmembers():
+                    name = m.name.replace("\\", "/")
+                    if name.startswith("/") or ".." in name or \
+                            not name.startswith(("kitea.db", "uploads")):
+                        raise SystemExit(f"unexpected archive member: {m.name}")
+                tar.extractall(tmp)  # noqa: S202 (members validated above)
         db = sqlite3.connect(Path(tmp) / "kitea.db")
         integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
         reports = db.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
