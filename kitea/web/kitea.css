@@ -465,13 +465,14 @@ body.canvas {
 /* ---- canvas map pins -------------------------------------------------- */
 
 .cpin {
-  width: 16px; height: 16px; border-radius: 50%;
-  border: 2.5px solid #fff; box-shadow: 0 1px 5px rgba(32,42,46,.45);
+  width: 19px; height: 19px; border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgba(32,42,46,.35), 0 1px 6px rgba(32,42,46,.5);
   cursor: pointer; position: relative;
 }
 .cpin::before { content: ""; position: absolute; inset: -8px; border-radius: 50%; }
 @media (pointer: coarse) {
-  .cpin { width: 22px; height: 22px; }
+  .cpin { width: 24px; height: 24px; }
   .cpin::before { inset: -12px; }
   .cpin-hub, .cpin-outage { font-size: 20px; position: relative; }
   .cpin-hub::before, .cpin-outage::before {

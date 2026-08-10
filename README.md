@@ -3,15 +3,16 @@
 **Impact Hub Wellington 2026 · Team 6 · Problem 02**
 Wellington City Council Emergency Management × Claude Code Community NZ
 
-### ▶ [Watch the walkthrough](https://impact-lab.bitn.cloud/walkthrough.mp4) · ⚡ [Four slides](https://impact-lab.bitn.cloud/showcase.html) · 📊 [Full deck](https://impact-lab.bitn.cloud/presentation.html) · 🌐 [Live product](https://impact-lab.bitn.cloud)
+### ▶ [Live product](https://kitea.bitn.co.nz) · ⚡ [Four slides](four-slides.html) · 📊 [Full deck](web/presentation.html) · 🎬 [Walkthrough](web/walkthrough.mp4)
 
-*Narrated 2m35s video · 12-slide deck for a 3-minute talk · the real thing,
-running, with live NZTA and river-gauge data.*
+*The real thing, running, with live river-gauge, road, quake and weather
+data · a self-contained four-slide summary · a 12-slide talk deck.*
 
 A working prototype of the thing Problem 02 asks for: a route for communities
-to report local conditions to Wellington City Council, and — the part that
-usually goes missing — a way to **see that the report was received and what is
-happening to it**.
+to report local conditions to the council, and — the part that usually goes
+missing — a way to **see that the report was received and what is happening to
+it**. The current build is **Kitea** (see below); this walkthrough and the
+decks show the running product.
 
 ![Walkthrough](walkthrough.gif)
 
@@ -19,15 +20,13 @@ happening to it**.
 
 | | |
 |---|---|
-| **[Narrated walkthrough (2m35s)](https://impact-lab.bitn.cloud/walkthrough.mp4)** | Hosted — plays in the browser. Script: [VOICEOVER.md](VOICEOVER.md) |
-| **[Four slides](https://impact-lab.bitn.cloud/showcase.html)** | Real production screenshots, one idea each — the short version |
-| **[four-slides.html](four-slides.html)** | The same four slides as **one self-contained file** — download it and open it anywhere, no internet needed |
-| **[Presentation (12 slides, 3 min)](https://impact-lab.bitn.cloud/presentation.html)** | Hosted — press `F` for fullscreen. Talking points: [PRESENTATION.md](PRESENTATION.md) |
-| **[The product itself](https://impact-lab.bitn.cloud)** | Live, with real NZTA and river-gauge data |
+| **[The product itself](https://kitea.bitn.co.nz)** | Live, with real agency data. In an emergency call 111. |
+| **[Walkthrough (~28s)](web/walkthrough.mp4)** | Captioned tour of the running product. Narration: [VOICEOVER.md](VOICEOVER.md) |
+| **[four-slides.html](four-slides.html)** | Four real screenshots, one idea each, as **one self-contained file** — download it and open it anywhere, offline |
+| **[Presentation (12 slides, 3 min)](web/presentation.html)** | Press `F` for fullscreen. Talking points: [PRESENTATION.md](PRESENTATION.md) |
 
-Both are hosted rather than only committed, because GitHub will not play a
-5 MB MP4 inline. The GIF above is the silent preview; the hosted MP4 has the
-voiceover.
+The GIF above is the silent preview; `web/walkthrough.mp4` is the same tour.
+Both were regenerated from the current Kitea UI.
 
 ---
 
