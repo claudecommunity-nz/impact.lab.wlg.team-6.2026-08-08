@@ -64,8 +64,10 @@ That is the entire economics of the product.
    - No account or email needed; possession of a code is the only credential.
    - Works in any browser on any phone; heavy assets (map library, fonts)
      are served locally, not from CDNs that may be unreachable in an event.
-   - Body typeface is Atkinson Hyperlegible, designed by the Braille
-     Institute for low-vision readers.
+   - Typography is Fira Sans, the NZ Government digital standard
+     (govt.nz), served locally: the interface reads as official because it
+     shares the government web's own voice. (An Atkinson Hyperlegible
+     low-vision mode remains vendored for the accessibility roadmap.)
    - "Reporting as" explicitly includes community groups, hubs and
      *on behalf of someone else*: the librarian, the marae, the neighbour
      with the working phone are all first-class reporters.

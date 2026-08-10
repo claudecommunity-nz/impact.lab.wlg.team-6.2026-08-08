@@ -4,13 +4,18 @@
    accessibility decision as much as a design one. Display is Fraunces. */
 
 @font-face {
-  font-family: "Atkinson Hyperlegible";
-  src: url("/static/fonts/atkinson-400.woff2") format("woff2");
+  font-family: "Fira Sans";
+  src: url("/static/fonts/fira-400.woff2") format("woff2");
   font-weight: 400; font-style: normal; font-display: swap;
 }
 @font-face {
-  font-family: "Atkinson Hyperlegible";
-  src: url("/static/fonts/atkinson-700.woff2") format("woff2");
+  font-family: "Fira Sans";
+  src: url("/static/fonts/fira-600.woff2") format("woff2");
+  font-weight: 600; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Fira Sans";
+  src: url("/static/fonts/fira-700.woff2") format("woff2");
   font-weight: 700; font-style: normal; font-display: swap;
 }
 @font-face {
@@ -44,9 +49,10 @@
   --st-responding-bg: #E3ECFA;
   --st-resolved-bg: #E1F0E5;
 
-  --sans: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
-  --display: "Fraunces", Georgia, serif;
-  --radius: 14px;
+  --sans: "Fira Sans", "Segoe UI", system-ui, sans-serif;
+  --display: "Fira Sans", "Segoe UI", system-ui, sans-serif;
+  --wordmark: "Fraunces", Georgia, serif;
+  --radius: 8px;
   --shadow: 0 1px 2px rgba(32,42,46,.06), 0 8px 28px -12px rgba(32,42,46,.18);
 }
 
@@ -58,9 +64,7 @@ body {
   font-size: 17px;
   line-height: 1.55;
   color: var(--ink);
-  background:
-    radial-gradient(1200px 500px at 85% -10%, var(--accent-soft) 0%, transparent 60%),
-    var(--paper);
+  background: var(--paper);
 }
 
 a { color: var(--pine); }
@@ -74,7 +78,7 @@ button { font-family: inherit; }
 .masthead { display: flex; align-items: center; gap: 12px; padding: 22px 0 6px; }
 .brandmark { flex: none; }
 .brand-name {
-  font-family: var(--display);
+  font-family: var(--wordmark);
   font-size: 30px; font-weight: 650; letter-spacing: -0.01em;
   color: var(--pine-deep);
 }
@@ -333,21 +337,24 @@ body.canvas {
 
 .canvas-head {
   display: flex; align-items: center; gap: 14px;
-  padding: 10px 16px 8px; flex-wrap: wrap;
+  padding: 9px 16px; flex-wrap: wrap;
+  background: var(--pine-deep);
 }
-.canvas-head .brand-name { font-size: 24px; }
+.canvas-head .brand-name { font-size: 23px; color: #fff; }
+.canvas-head .brand-tag { color: #A9C3BA; }
 .canvas-head .masthead-right { margin-left: auto; }
 
 .lenses {
-  display: inline-flex; background: var(--raised); border: 1.5px solid var(--line);
-  border-radius: 999px; padding: 3px; gap: 2px;
+  display: inline-flex; background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.25);
+  border-radius: 7px; padding: 3px; gap: 2px;
 }
 .lens {
   border: none; background: transparent; cursor: pointer;
-  font-weight: 700; font-size: 13.5px; color: var(--ink-soft);
-  padding: 6px 14px; border-radius: 999px;
+  font-weight: 600; font-size: 13.5px; color: #C9D9D2;
+  padding: 6px 14px; border-radius: 5px;
 }
-.lens[aria-pressed="true"] { background: var(--pine); color: #fff; }
+.lens[aria-pressed="true"] { background: var(--accent); color: #241C00; font-weight: 700; }
 .lens .count { font-weight: 400; opacity: .75; font-size: 12px; }
 
 .notice-slim {
@@ -445,11 +452,13 @@ body.canvas {
   border: 2px solid var(--danger); cursor: pointer; }
 .cpin-outage { font-size: 15px; cursor: pointer; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
 
+.canvas-head .live-tag { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.25); color: #C9D9D2; }
+
 #btn-report-fab {
   position: absolute; z-index: 30; left: 16px; bottom: 18px;
   background: var(--accent); color: #241C00; border: none; cursor: pointer;
-  font-weight: 700; font-size: 16.5px; font-family: var(--sans);
-  padding: 14px 22px; border-radius: 999px;
+  font-weight: 700; font-size: 16px; font-family: var(--sans);
+  padding: 13px 20px; border-radius: 8px;
   box-shadow: 0 4px 18px -4px rgba(107,82,0,.5);
 }
 #btn-report-fab:active { transform: scale(.97); }
@@ -504,11 +513,11 @@ body.canvas {
 
 /* ---- v2.1: help FAB, offers, emergency mode ---------------------------- */
 #btn-help-fab {
-  position: absolute; z-index: 30; left: 16px; bottom: 76px;
+  position: absolute; z-index: 30; left: 16px; bottom: 74px;
   background: var(--raised); color: var(--pine-deep);
   border: 2px solid var(--pine); cursor: pointer;
-  font-weight: 700; font-size: 15px; font-family: var(--sans);
-  padding: 11px 18px; border-radius: 999px;
+  font-weight: 700; font-size: 14.5px; font-family: var(--sans);
+  padding: 10px 16px; border-radius: 8px;
   box-shadow: 0 4px 14px -6px rgba(12,59,53,.4);
 }
 #btn-help-fab:active { transform: scale(.97); }
@@ -548,3 +557,34 @@ body.canvas {
 }
 .offer-rows .o-kind { font-weight: 700; color: var(--pine-deep); }
 .offer-rows .o-when { color: var(--ink-mute); font-size: 12px; float: right; }
+
+
+/* ---- demo banner + entry notice ---------------------------------------- */
+.demo-banner {
+  flex: none; text-align: center;
+  background: repeating-linear-gradient(-45deg, var(--accent) 0 14px, #E0A800 14px 28px);
+  color: #241C00; font-weight: 700; font-size: 12px; letter-spacing: .06em;
+  padding: 5px 12px; text-transform: uppercase;
+}
+body:not(.canvas) .demo-banner { margin: 0 -20px; }
+
+.gate {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(12,26,24,.6); backdrop-filter: blur(2px);
+  display: grid; place-items: center; padding: 20px;
+}
+.gate-card {
+  width: min(480px, 100%); background: var(--raised);
+  border-radius: 10px; border-top: 6px solid var(--accent);
+  padding: 26px 26px 22px; box-shadow: 0 24px 70px -20px rgba(0,0,0,.55);
+}
+.gate-card h2 {
+  font-family: var(--sans); font-weight: 700; font-size: 21px;
+  margin: 0 0 8px; color: var(--pine-deep);
+}
+.gate-card p { margin: 0 0 10px; font-size: 15px; color: var(--ink-soft); }
+.gate-card .gate-ok {
+  width: 100%; margin-top: 8px; font: inherit; font-weight: 700;
+  background: var(--pine); color: #fff; border: none; border-radius: 8px;
+  padding: 13px; cursor: pointer; font-size: 16px;
+}

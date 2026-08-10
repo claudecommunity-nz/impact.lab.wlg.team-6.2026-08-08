@@ -1138,6 +1138,20 @@ function openTrackStream(ref) {
 
 /* ================================================================ boot */
 
+// Demo entry notice: once per browser session, on any public view.
+(function demoGate() {
+  const gate = $("demo-gate");
+  if (!gate) return;
+  try {
+    if (sessionStorage.getItem("kitea-demo-ack")) return;
+  } catch { return; }
+  gate.classList.remove("hidden");
+  $("gate-ok").addEventListener("click", () => {
+    try { sessionStorage.setItem("kitea-demo-ack", "1"); } catch {}
+    gate.classList.add("hidden");
+  });
+})();
+
 if (trackRef) {
   $("view-canvas").classList.add("hidden");
   document.body.classList.remove("canvas");
