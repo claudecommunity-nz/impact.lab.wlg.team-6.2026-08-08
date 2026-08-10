@@ -330,6 +330,15 @@ def get_report(ref: str, private: bool = False) -> dict | None:
     return rep
 
 
+def ref_for_public_id(public_id: str) -> str | None:
+    """Server-side only: map a public id back to its reference code, for
+    routing a reporter-targeted event. The ref never leaves the server."""
+    with _conn() as db:
+        row = db.execute("SELECT ref FROM reports WHERE public_id=?",
+                         (public_id,)).fetchone()
+    return row["ref"] if row else None
+
+
 def get_public_item(public_id: str) -> dict | None:
     """The public item page: what anyone may see about a report from its
     public id. Status/verified timeline with times only; ops notes are for

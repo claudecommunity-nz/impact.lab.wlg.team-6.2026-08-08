@@ -56,7 +56,10 @@ def main() -> int:
             exe = os.environ.get("PLAYWRIGHT_CHROMIUM_PATH")
             browser = pw.chromium.launch(executable_path=exe) if exe \
                 else pw.chromium.launch()
+            # CI runners are slow; default 5s assertion timeout flakes on
+            # dynamic content. 15s is patient without hiding a real hang.
             page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.set_default_timeout(15000)
 
             # ── resident: gate → place pin → drawer → submit → tracking
             page.goto(BASE, wait_until="domcontentloaded")
@@ -83,6 +86,7 @@ def main() -> int:
             with urllib.request.urlopen(f"{BASE}/api/reports?limit=1", timeout=5) as r:
                 pid = json.load(r)["reports"][0]["public_id"]
             public = browser.new_page(viewport={"width": 1280, "height": 900})
+            public.set_default_timeout(15000)
             public.goto(f"{BASE}/?item={pid}", wait_until="domcontentloaded")
             public.click("#gate-ok")
             expect(public.locator(".item-detail .prov")).to_contain_text("community")
@@ -93,6 +97,7 @@ def main() -> int:
 
             # ── ops: unlock → open report → verify → badge appears
             ops = browser.new_page(viewport={"width": 1400, "height": 900})
+            ops.set_default_timeout(15000)
             ops.goto(f"{BASE}/ops", wait_until="domcontentloaded")
             ops.fill("#lock-key", OPS_KEY)
             ops.click("#lock-form button[type=submit]")
@@ -110,6 +115,7 @@ def main() -> int:
             # ── mobile: resident flow on a phone viewport
             mob = browser.new_page(viewport={"width": 390, "height": 844},
                                    is_mobile=True, has_touch=True)
+            mob.set_default_timeout(15000)
             mob.goto(BASE, wait_until="domcontentloaded")
             mob.click("#gate-ok")
             expect(mob.locator("#btn-report-fab")).to_be_visible()

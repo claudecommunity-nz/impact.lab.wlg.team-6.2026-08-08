@@ -766,6 +766,13 @@ function offerBlock(item, mine) {
     wrap.append(note);
     return wrap;
   }
+  if (offeredItems.has(item.public_id)) {
+    const thanks = document.createElement("div");
+    thanks.className = "offer-thanks";
+    thanks.textContent = "Kia ora: your offer is with the council and the reporter.";
+    wrap.append(thanks);
+    return wrap;
+  }
   const form = document.createElement("form");
   form.className = "offer-form";
   const kind = document.createElement("select");
@@ -794,6 +801,7 @@ function offerBlock(item, mine) {
       await postJSON(`/api/items/${encodeURIComponent(item.public_id)}/offer`,
         { kind: kind.value, text: text.value.trim(),
           contact: contact.value.trim() || null });
+      offeredItems.add(item.public_id);   // survives SSE re-render of this item
       form.replaceChildren();
       const thanks = document.createElement("div");
       thanks.className = "offer-thanks";
@@ -881,6 +889,7 @@ function selectFeedItem(info) {
 
 let pickedCategory = null;
 let presetCategory = null;
+const offeredItems = new Set();  // public_ids this browser has offered on
 let photoB64 = null;
 let drawerLatLng = null;
 

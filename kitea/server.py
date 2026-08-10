@@ -693,10 +693,7 @@ class Handler(BaseHTTPRequestHandler):
         HUB.publish("offer", offer, ops_only=True)
         # the reporter learns a neighbour has offered; the public only sees
         # the count move
-        with _misses_lock:
-            pass
-        ref_row = store.list_reports(limit=1000, private=True)
-        ref = next((r["ref"] for r in ref_row if r["public_id"] == public_id), None)
+        ref = store.ref_for_public_id(public_id)
         if ref:
             HUB.publish("offer", {k: offer[k] for k in
                                   ("kind", "text", "created_at")}, ref=ref)
