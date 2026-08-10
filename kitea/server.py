@@ -268,10 +268,16 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return ident
 
-    def log_message(self, fmt, *args):  # quieter default log, no query strings
+    def log_message(self, fmt, *args):  # structured, no query strings (may carry keys)
         path = self.path.split("?")[0]
-        print(f"{self.log_date_time_string()} {self.command} {path} "
-              f"{args[-1] if args else ''}")
+        status = args[1] if len(args) > 1 else "-"
+        dur_ms = round((time.monotonic() - getattr(self, "_t0", time.monotonic())) * 1000)
+        print(json.dumps({"t": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                          "m": self.command, "p": path, "s": status, "ms": dur_ms}))
+
+    def parse_request(self):
+        self._t0 = time.monotonic()
+        return super().parse_request()
 
     # -- routing ------------------------------------------------------------
 
