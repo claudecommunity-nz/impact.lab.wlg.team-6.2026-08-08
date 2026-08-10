@@ -811,7 +811,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def _retention_loop() -> None:
+def _retention_loop() -> None:  # pragma: no cover - process bootstrap; behaviour tested via store.apply_retention
     """Enforce the privacy review's retention schedule (IPP9), daily."""
     while True:
         try:
@@ -823,7 +823,7 @@ def _retention_loop() -> None:
         time.sleep(24 * 3600)
 
 
-class _ReusePortServer(ThreadingHTTPServer):
+class _ReusePortServer(ThreadingHTTPServer):  # pragma: no cover - exercised by the load smoke in a subprocess
     """SO_REUSEPORT lets N worker processes share one port: the kernel
     load-balances connections. This is the documented scaling path past
     the single interpreter's GIL, measured by the load smoke's stress
@@ -836,7 +836,7 @@ class _ReusePortServer(ThreadingHTTPServer):
         super().server_bind()
 
 
-def run(host: str = "127.0.0.1", port: int = 8146, workers: int = 1) -> None:
+def run(host: str = "127.0.0.1", port: int = 8146, workers: int = 1) -> None:  # pragma: no cover - subprocess entrypoint
     store.init(DATA_DIR / "kitea.db")
     if workers > 1 and hasattr(os, "fork"):
         for _ in range(workers - 1):

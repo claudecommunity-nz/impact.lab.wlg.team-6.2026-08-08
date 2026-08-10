@@ -311,6 +311,27 @@ class TestKitea(unittest.TestCase):
         _, meta = _request("GET", "/api/meta")
         self.assertEqual(meta["mode"], "normal")
 
+    def test_metrics_requires_ops_and_reports_counters(self):
+        status, _ = _request("GET", "/api/metrics")
+        self.assertEqual(status, 401)
+        status, m = _request("GET", "/api/metrics", key=KEY)
+        self.assertEqual(status, 200)
+        self.assertGreater(m["requests_total"], 0)
+        self.assertIn("reports", m)
+        self.assertIn("sse_clients", m)
+
+    def test_honeypot_rejects_form_bots(self):
+        status, _ = _request("POST", "/api/reports", {
+            "category": "other", "description": "I am a bot",
+            "website": "http://spam.example"})
+        self.assertEqual(status, 400)
+        _, rep = _request("POST", "/api/reports",
+                          {"category": "other", "description": "offer target"})
+        status, _ = _request("POST", f"/api/items/{rep['public_id']}/offer",
+                             {"kind": "hands", "text": "bot offer",
+                              "website": "x"})
+        self.assertEqual(status, 400)
+
     # -- photo handling -------------------------------------------------------
 
     def test_photo_magic_bytes_enforced(self):
