@@ -10,4 +10,4 @@ browser. Run from the repo root:
     python3 -m kitea
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

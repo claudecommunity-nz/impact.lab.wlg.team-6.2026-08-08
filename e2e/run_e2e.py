@@ -67,6 +67,13 @@ def main() -> int:
             page.click("#gate-ok")
             expect(page.locator("#demo-gate")).to_be_hidden()
 
+            # first-visit tour appears after the gate; step through and skip
+            expect(page.locator("#tour")).to_be_visible()
+            expect(page.locator("#tour-body")).to_contain_text("Welcome to Kitea")
+            page.click("#tour-next")
+            page.click("#tour-skip")
+            expect(page.locator("#tour")).to_be_hidden()
+
             page.click("#btn-report-fab")
             expect(page.locator("#placing-banner")).to_be_visible()
             page.locator("#canvas-map").click(position={"x": 450, "y": 350})
@@ -87,6 +94,7 @@ def main() -> int:
                 pid = json.load(r)["reports"][0]["public_id"]
             public = browser.new_page(viewport={"width": 1280, "height": 900})
             public.set_default_timeout(15000)
+            public.add_init_script("try{localStorage.setItem('kitea-tour-done','1')}catch(e){}")
             public.goto(f"{BASE}/?item={pid}", wait_until="domcontentloaded")
             public.click("#gate-ok")
             expect(public.locator(".item-detail .prov")).to_contain_text("community")
@@ -94,6 +102,11 @@ def main() -> int:
             public.fill(".offer-form textarea", "E2E: I have a pump nearby")
             public.click(".offer-send")
             expect(public.locator(".offer-thanks")).to_be_visible()
+            # simulate WCC staff (demo) — sandboxed, must not change real status
+            public.click(".sim-toggle")
+            public.locator(".sim-btn", has_text="Acknowledged").click()
+            expect(public.locator(".sim-log li")).to_be_visible()
+            expect(public.locator(".sim-simlabel").first).to_contain_text("simulated")
 
             # ── ops: unlock → open report → verify → badge appears
             ops = browser.new_page(viewport={"width": 1400, "height": 900})
@@ -116,6 +129,7 @@ def main() -> int:
             mob = browser.new_page(viewport={"width": 390, "height": 844},
                                    is_mobile=True, has_touch=True)
             mob.set_default_timeout(15000)
+            mob.add_init_script("try{localStorage.setItem('kitea-tour-done','1')}catch(e){}")
             mob.goto(BASE, wait_until="domcontentloaded")
             mob.click("#gate-ok")
             expect(mob.locator("#btn-report-fab")).to_be_visible()

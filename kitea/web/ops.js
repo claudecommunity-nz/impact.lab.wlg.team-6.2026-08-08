@@ -915,6 +915,11 @@ async function initTabs() {
   });
   $("comms-form").addEventListener("submit", postComms);
   $("user-form").addEventListener("submit", createUser);
+  const alertBox = $("comms-alert"), sev = $("comms-severity");
+  if (alertBox) alertBox.addEventListener("change", () =>
+    sev.classList.toggle("hidden", !alertBox.checked));
+  refreshSubs();
+  setInterval(refreshSubs, 30000);
 }
 
 function paintModeToggle(mode) {
@@ -939,16 +944,26 @@ async function postComms(e) {
       comms_type: $("comms-type").value,
     };
     if ($("comms-expiry").value) body.expires_in_h = Number($("comms-expiry").value);
+    if ($("comms-alert").checked) { body.alert = true; body.severity = $("comms-severity").value; }
     if (commsLatLng) { body.lat = commsLatLng.lat; body.lng = commsLatLng.lng; }
     await api("/api/ops/comms", { method: "POST",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     $("comms-title").value = ""; $("comms-body").value = "";
+    $("comms-alert").checked = false; $("comms-severity").classList.add("hidden");
     commsLatLng = null;
     $("comms-pin-btn").classList.remove("set");
     $("comms-pin-state").textContent = "no location";
     refreshComms();
   } catch (ex) { err.textContent = ex.message; }
   btn.disabled = false;
+}
+
+async function refreshSubs() {
+  try {
+    const m = await api("/api/metrics");
+    const el = $("comms-subs");
+    if (el) el.textContent = `🔔 ${m.alert_subscribers} resident${m.alert_subscribers === 1 ? "" : "s"} subscribed to alerts`;
+  } catch {}
 }
 
 async function refreshComms() {

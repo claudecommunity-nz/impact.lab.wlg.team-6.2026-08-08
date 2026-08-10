@@ -355,6 +355,57 @@ class TestKitea(unittest.TestCase):
         # visitor B is unaffected
         self.assertEqual(miss("203.0.113.8"), 404)
 
+    def test_demo_action_is_sandboxed_and_moderated(self):
+        _, rep = _request("POST", "/api/reports",
+                          {"category": "welfare-need", "description": "needs water"})
+        pid, ref = rep["public_id"], rep["ref"]
+        # a public visitor can simulate a staff action, no ops key
+        status, act = _request("POST", f"/api/demo/items/{pid}/action",
+                               {"kind": "acknowledged", "note": "on it (demo)"})
+        self.assertEqual(status, 201)
+        self.assertTrue(act["simulated"])
+        # it shows on the public item but the REAL status is untouched
+        _, item = _request("GET", f"/api/items/{pid}")
+        self.assertEqual(len(item["demo_actions"]), 1)
+        self.assertEqual(item["status"], "received")      # unchanged
+        self.assertFalse(item["verified"])
+        # the reporter's real history has no demo action in it
+        _, view = _request("GET", f"/api/reports/{ref}")
+        self.assertEqual([e["status"] for e in view["history"]], ["received"])
+        # abusive demo note is rejected
+        status, body = _request("POST", f"/api/demo/items/{pid}/action",
+                                {"kind": "update", "note": "you cunt"})
+        self.assertEqual(status, 400)
+        # bad kind + unknown item
+        self.assertEqual(_request("POST", f"/api/demo/items/{pid}/action",
+                                  {"kind": "verify"})[0], 400)
+        self.assertEqual(_request("POST", "/api/demo/items/KZZZZZZ/action",
+                                  {"kind": "update", "note": "x"})[0], 404)
+
+    def test_report_and_offer_moderation(self):
+        self.assertEqual(_request("POST", "/api/reports",
+            {"category": "other", "description": "this is fucking broken"})[0], 400)
+        _, rep = _request("POST", "/api/reports",
+                          {"category": "other", "description": "clean report"})
+        self.assertEqual(_request("POST", f"/api/items/{rep['public_id']}/offer",
+            {"kind": "hands", "text": "piss off"})[0], 400)
+
+    def test_alert_broadcast_and_subscribe(self):
+        status, out = _request("POST", "/api/alerts/subscribe", {"token": "tok-1"})
+        self.assertEqual(status, 201)
+        self.assertGreaterEqual(out["subscribers"], 1)
+        self.assertEqual(_request("POST", "/api/alerts/subscribe", {})[0], 400)
+        # an ops alert comms carries the flag on the public feed
+        status, post = _request("POST", "/api/ops/comms",
+            {"title": "Evacuate now", "body": "Move to higher ground",
+             "comms_type": "flood", "alert": True, "severity": "extreme"}, key=KEY)
+        self.assertEqual(status, 201)
+        self.assertTrue(post["alert"])
+        _, pub = _request("GET", "/api/comms")
+        row = next(c for c in pub["comms"] if c["public_id"] == post["public_id"])
+        self.assertTrue(row["alert"])
+        self.assertEqual(row["severity"], "extreme")
+
     # -- photo handling -------------------------------------------------------
 
     def test_photo_magic_bytes_enforced(self):

@@ -83,7 +83,14 @@
             <button type="button" class="compose-pin" id="comms-pin-btn">📍 Pin on map</button>
             <span class="compose-pin-state" id="comms-pin-state">no location</span>
           </div>
+          <label class="alert-check"><input type="checkbox" id="comms-alert"> ⚠️ Broadcast as ALERT (banner + notification to subscribers)</label>
+          <select id="comms-severity" aria-label="Alert severity" class="hidden">
+            <option value="moderate">Advisory</option>
+            <option value="severe" selected>Warning</option>
+            <option value="extreme">Emergency</option>
+          </select>
           <button type="submit" class="compose-post" id="comms-post">Publish to the public map</button>
+          <div class="note-hint" id="comms-subs">—</div>
           <div class="lock-error" id="comms-error"></div>
         </form>
         <div id="comms-list"></div>

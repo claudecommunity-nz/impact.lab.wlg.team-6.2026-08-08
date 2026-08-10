@@ -39,7 +39,7 @@ from pathlib import Path
 # Found by the load smoke; a real fix, not a benchmark tweak.
 ThreadingHTTPServer.request_queue_size = 128
 
-from . import __version__, feeds, store
+from . import __version__, feeds, moderation, store
 
 WEB_DIR = Path(__file__).parent / "web"
 DATA_DIR = Path(os.environ.get("KITEA_DATA_DIR", "data"))
@@ -65,6 +65,7 @@ OPS_KEY = os.environ.get("KITEA_OPS_KEY") or secrets.token_urlsafe(9)
 
 _STARTED = time.monotonic()
 _REQUESTS = [0]  # served requests, this process
+_ALERT_SUBS: set[str] = set()  # ephemeral alert-subscriber tokens (this process)
 
 _submits: dict[str, deque] = defaultdict(deque)
 _submits_lock = threading.Lock()
@@ -334,6 +335,7 @@ class Handler(BaseHTTPRequestHandler):
                     "uptime_s": round(time.monotonic() - _STARTED),
                     "requests_total": _REQUESTS[0],
                     "sse_clients": sse,
+                    "alert_subscribers": len(_ALERT_SUBS),
                     "reports": store.stats(),
                     "feed_cache_expiry_offsets_s": cache_ages,
                     "mode": store.get_mode(),
@@ -408,7 +410,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json({"comms": [
                     {k: c[k] for k in ("public_id", "created_at", "title", "body",
                                        "comms_type", "lat", "lng", "place_name",
-                                       "expires_at")}
+                                       "expires_at", "alert", "severity")}
                     for c in store.list_comms(include_inactive=False)]})
             if path == "/api/ops/comms":
                 if self._require(query, "duty", "comms") is None:
@@ -465,6 +467,11 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/items/(K[A-Z2-9]{4,10})/offer", path)
             if m:
                 return self._create_offer(m.group(1), body)
+            m = re.fullmatch(r"/api/demo/items/(K[A-Z2-9]{4,10})/action", path)
+            if m:
+                return self._demo_action(m.group(1), body)
+            if path == "/api/alerts/subscribe":
+                return self._alert_subscribe(body)
             m = re.fullmatch(r"/api/reports/([A-Z0-9-]{4,16})/status", path)
             if m:
                 ident = self._require(query, "duty")
@@ -571,6 +578,9 @@ class Handler(BaseHTTPRequestHandler):
             photo_path = self._save_photo(photo_b64)
             if photo_path is None:
                 return  # _save_photo already answered
+        ok, why = moderation.check(str(body.get("description", "")))
+        if not ok:
+            return self._error(400, f"please remove {why} and try again")
         try:
             report = store.create_report(
                 category=str(body.get("category", "")),
@@ -676,6 +686,9 @@ class Handler(BaseHTTPRequestHandler):
         if self._rate_limited("offers"):
             return self._error(429, "too many submissions from this "
                                     "connection; please wait")
+        ok, why = moderation.check(str(body.get("text", "")))
+        if not ok:
+            return self._error(400, f"please remove {why} and try again")
         try:
             offer = store.create_offer(
                 item_public_id=public_id,
@@ -701,6 +714,38 @@ class Handler(BaseHTTPRequestHandler):
                                      "offer_count": rep["offer_count"]})
         self._send_json({"ok": True, "offer_count": rep["offer_count"]}, status=201)
 
+    def _demo_action(self, public_id: str, body: dict) -> None:
+        """Sandboxed, ephemeral demo of a WCC officer actioning a report.
+        Writes ONLY to demo_actions (auto-expiring); never changes the
+        report's real status, verification, or audit trail.
+        """
+        if self._rate_limited("demo"):
+            return self._error(429, "too many demo actions; please wait a moment")
+        note = str(body.get("note") or "")
+        ok, why = moderation.check(note)
+        if not ok:
+            return self._error(400, f"please remove {why} and try again")
+        try:
+            action = store.add_demo_action(public_id, str(body.get("kind", "")), note)
+        except KeyError:
+            return self._error(404, "no item with that id")
+        except ValueError as exc:
+            return self._error(400, str(exc))
+        HUB.publish("demo-action", action)         # public broadcast, clearly simulated
+        self._send_json(action, status=201)
+
+    def _alert_subscribe(self, body: dict) -> None:
+        """Resident opts in to alerts. Storage is momentary: a per-session
+        token held in memory only, giving the council a live subscriber
+        count. Real delivery (Web Push / SMS) is the pilot's job; the demo
+        delivers via the open SSE stream + browser notifications.
+        """
+        token = str(body.get("token") or "")[:64]
+        if not token:
+            return self._error(400, "a subscription token is required")
+        _ALERT_SUBS.add(token)
+        self._send_json({"ok": True, "subscribers": len(_ALERT_SUBS)}, status=201)
+
     def _create_comms(self, body: dict, ident: dict) -> None:
         expires_at = None
         hours = body.get("expires_in_h")
@@ -722,14 +767,18 @@ class Handler(BaseHTTPRequestHandler):
                 place_name=body.get("place_name"),
                 expires_at=expires_at,
                 author=ident["name"],
+                alert=bool(body.get("alert")),
+                severity=(str(body.get("severity")) if body.get("severity") else None),
             )
         except (ValueError, TypeError) as exc:
             return self._error(400, str(exc))
         public = {k: post[k] for k in ("public_id", "created_at", "title", "body",
                                        "comms_type", "lat", "lng", "place_name",
-                                       "expires_at")}
+                                       "expires_at", "alert", "severity")}
         HUB.publish("comms", public)
         HUB.publish("comms", post, ops_only=True)
+        if post.get("alert"):
+            HUB.publish("alert", public)          # priority broadcast to everyone
         self._send_json(post, status=201)
 
     def _withdraw_comms(self, public_id: str, ident: dict) -> None:
@@ -870,8 +919,9 @@ def _retention_loop() -> None:  # pragma: no cover - process bootstrap; behaviou
     while True:
         try:
             removed = store.apply_retention(uploads_dir=UPLOAD_DIR)
-            if any(removed.values()):
-                print(f"retention: {removed}")
+            pruned = store.prune_demo_actions()
+            if any(removed.values()) or pruned:
+                print(f"retention: {removed} demo_actions_pruned={pruned}")
         except Exception as exc:
             print(f"retention run failed: {exc!r}")
         time.sleep(24 * 3600)

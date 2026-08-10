@@ -115,6 +115,26 @@ Same map component and data, plus the private layers, in three tabs:
   platform runs exactly the same loop for everyday reports: the emergency
   posture is a switch, not a separate product.
 
+## Live demo affordances (built with v3)
+
+- **Simulate WCC staff** on a community item lets a public visitor feel the
+  council side — acknowledge, set a status, post an update — entirely
+  SANDBOXED: it writes only to an ephemeral `demo_actions` table (30-min
+  auto-expiry), never touches the report's real status/verification/audit,
+  and is always labelled "simulated, not a real council action".
+- **Abuse filter** (`kitea/moderation.py`, stdlib): every public free-text
+  input (reports, offers, demo notes) is checked and abusive text rejected.
+  Demo-grade wordlist matcher with leetspeak + boundary handling; a pilot
+  uses a maintained moderation service.
+- **Council broadcast alerts + resident sign-up**: an ops alert fires a
+  priority banner to every open page and a browser Notification to opted-in
+  residents; the subscriber count is shown to the council. Delivery is via
+  the open SSE stream + the Notifications API (page must be open). PILOT
+  needs Web Push (service worker, background delivery) + an SMS gateway so
+  no-data phones are reached — already on the roadmap below.
+- **First-visit tour**: a one-time click-through (localStorage) explaining
+  the map, lenses, reporting, help and alerts.
+
 ## The horizon: working as one
 
 Where this goes next, agreed 2026-08-10 (designed, not yet built):

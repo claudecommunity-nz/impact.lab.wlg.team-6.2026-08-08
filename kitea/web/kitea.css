@@ -652,3 +652,84 @@ body:not(.canvas) .demo-banner { margin: 0 -20px; }
 .commentary-item .c-t { font-weight: 700; font-size: 14px; }
 .commentary-item .c-b { font-size: 13.5px; color: var(--ink-soft); margin-top: 2px; }
 .commentary-item .c-w { font-size: 12px; color: var(--ink-mute); margin-top: 3px; }
+
+/* ===================================================================
+   v3: alerts, simulate-staff demo, arrival tour
+   =================================================================== */
+
+/* --- get-alerts button + priority banner --- */
+.alerts-btn {
+  font: inherit; font-weight: 700; font-size: 13px; cursor: pointer;
+  background: rgba(255,255,255,.1); color: #fff;
+  border: 1px solid rgba(255,255,255,.3); border-radius: 7px;
+  padding: 6px 12px; margin-right: 10px;
+}
+.alerts-btn[aria-pressed="true"] { background: var(--accent); color: #241C00; border-color: var(--accent); }
+
+.alert-banner {
+  flex: none; display: flex; align-items: center; gap: 12px;
+  padding: 12px 18px; color: #fff; font-weight: 700;
+  background: var(--danger);
+  animation: alertpulse 1.6s ease-in-out infinite;
+}
+.alert-banner.sev-severe { background: #C2410C; }
+.alert-banner.sev-moderate { background: var(--accent-ink); }
+.alert-banner .ab-body { font-weight: 400; }
+.alert-banner .ab-body b { font-weight: 700; }
+.alert-banner .ab-close { margin-left: auto; background: rgba(255,255,255,.2);
+  border: none; color: #fff; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-weight: 700; }
+@keyframes alertpulse { 0%,100%{filter:brightness(1)} 50%{filter:brightness(1.12)} }
+@media (prefers-reduced-motion: reduce){ .alert-banner{animation:none} }
+
+/* --- simulate WCC staff (demo) --- */
+.sim {
+  margin-top: 16px; border: 1.5px dashed #B9895A; border-radius: 12px;
+  background: repeating-linear-gradient(135deg,#FBF3E7 0 12px,#F7ECD9 12px 24px);
+  padding: 12px 14px;
+}
+.sim-head { display: flex; align-items: center; gap: 8px; }
+.sim-toggle {
+  font: inherit; font-weight: 700; font-size: 14px; cursor: pointer;
+  background: none; border: none; color: #8A5A24; padding: 0;
+}
+.sim-tag { font-size: 11px; font-weight: 700; color: #8A5A24;
+  border: 1px solid #C79A63; border-radius: 999px; padding: 1px 8px; }
+.sim-blurb { font-size: 12.5px; color: #7A6A52; margin: 6px 0 10px; }
+.sim-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.sim-btn {
+  font: inherit; font-weight: 700; font-size: 13px; cursor: pointer;
+  background: #fff; border: 1.5px solid #C79A63; color: #6B4A1E;
+  border-radius: 8px; padding: 7px 11px;
+}
+.sim-btn:active { transform: scale(.97); }
+.sim-note { width: 100%; font: inherit; font-size: 14px; padding: 8px 10px;
+  border: 1.5px solid #C79A63; border-radius: 8px; background: #fff; margin-bottom: 6px; }
+.sim-post { font: inherit; font-weight: 700; cursor: pointer; background: #8A5A24;
+  color: #fff; border: none; border-radius: 8px; padding: 8px 14px; }
+
+.sim-log { list-style: none; margin: 10px 0 0; padding: 0; }
+.sim-log li { font-size: 13.5px; padding: 6px 0; border-top: 1px solid #E4D2B6; }
+.sim-log .sk { font-weight: 700; color: #6B4A1E; text-transform: capitalize; }
+.sim-log .sw { color: #9A7A4A; font-size: 12px; float: right; }
+.sim-simlabel { font-size: 11px; color: #9A7A4A; font-style: italic; }
+
+/* --- arrival tour --- */
+.tour { position: fixed; inset: 0; z-index: 300; }
+.tour-spot {
+  position: absolute; border-radius: 10px; pointer-events: none;
+  box-shadow: 0 0 0 4px var(--accent), 0 0 0 9999px rgba(12,26,24,.66);
+  transition: all .25s ease;
+}
+.tour-pop {
+  position: absolute; max-width: 320px; background: var(--raised); color: var(--ink);
+  border-radius: 12px; padding: 16px 18px; box-shadow: 0 18px 50px -14px rgba(0,0,0,.5);
+  border-top: 5px solid var(--accent);
+}
+.tour-body { font-size: 15px; line-height: 1.5; }
+.tour-body b { color: var(--pine-deep); }
+.tour-nav { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+.tour-count { font-size: 12px; color: var(--ink-mute); margin-left: auto; }
+.tour-skip { background: none; border: none; color: var(--ink-mute); cursor: pointer; font: inherit; }
+.tour-next { background: var(--pine); color: #fff; border: none; border-radius: 8px;
+  padding: 9px 18px; font: inherit; font-weight: 700; cursor: pointer; }
+@media (max-width: 560px) { .tour-pop { max-width: calc(100vw - 32px); left: 16px !important; right: 16px; } }

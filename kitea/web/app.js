@@ -202,6 +202,7 @@ function initCanvas() {
     if (deep) selectReportItem(deep, false);
   });
   loadComms();
+  initAlerts();
   refreshFeeds();
   setInterval(refreshFeeds, 150_000);
   setInterval(renderPanel, 60_000);
@@ -329,6 +330,16 @@ function openCanvasStream() {
   });
   es.addEventListener("mode", (e) => {
     try { applyMode(JSON.parse(e.data).mode); } catch {}
+  });
+  es.addEventListener("alert", (e) => {
+    try { showAlert(JSON.parse(e.data)); } catch {}
+  });
+  es.addEventListener("demo-action", (e) => {
+    let a; try { a = JSON.parse(e.data); } catch { return; }
+    if (state.selected && state.selected.kind === "report" &&
+        state.selected.public_id === a.item_public_id) {
+      selectReportItem(a.item_public_id, false);
+    }
   });
   es.addEventListener("comms", (e) => {
     try { state.comms.unshift(JSON.parse(e.data)); } catch { return; }
@@ -727,6 +738,7 @@ async function selectReportItem(publicId, fly) {
   }
   d.append(tl);
 
+  if (!item.verified) d.append(simBlock(item));
   d.append(offerBlock(item, mine));
 
   if (mine) {
@@ -1214,8 +1226,13 @@ function openTrackStream(ref) {
   $("gate-ok").addEventListener("click", () => {
     try { sessionStorage.setItem("kitea-demo-ack", "1"); } catch {}
     gate.classList.add("hidden");
+    if (!trackRef) setTimeout(maybeStartTour, 400);
   });
 })();
+if (!trackRef) {
+  // gate already acknowledged this session -> tour may still be due
+  try { if (sessionStorage.getItem("kitea-demo-ack")) setTimeout(maybeStartTour, 600); } catch {}
+}
 
 if (trackRef) {
   $("view-canvas").classList.add("hidden");
@@ -1224,4 +1241,213 @@ if (trackRef) {
   initTrackView(trackRef, params.get("new") === "1");
 } else {
   initCanvas();
+}
+
+/* ============================================ v3: simulate WCC staff (demo) */
+
+const SIM_LABELS = { acknowledged: "Acknowledged", reviewing: "Reviewing",
+  responding: "Responding", resolved: "Resolved", update: "Update" };
+
+function simBlock(item) {
+  const wrap = document.createElement("div");
+  wrap.className = "sim";
+  const head = document.createElement("div");
+  head.className = "sim-head";
+  const toggle = document.createElement("button");
+  toggle.className = "sim-toggle";
+  toggle.textContent = "🎭 Simulate WCC staff";
+  const tag = document.createElement("span");
+  tag.className = "sim-tag";
+  tag.textContent = "demo";
+  head.append(toggle, tag);
+  wrap.append(head);
+
+  const body = document.createElement("div");
+  body.hidden = true;
+  const blurb = document.createElement("div");
+  blurb.className = "sim-blurb";
+  blurb.textContent = "See it from the council's side. These actions are a "
+    + "simulation for the demo only — they do not change the real report or "
+    + "notify anyone, and they disappear after a while.";
+  body.append(blurb);
+
+  const actions = document.createElement("div");
+  actions.className = "sim-actions";
+  for (const k of ["acknowledged", "reviewing", "responding", "resolved"]) {
+    const b = document.createElement("button");
+    b.className = "sim-btn";
+    b.textContent = SIM_LABELS[k];
+    b.addEventListener("click", () => postDemo(item.public_id, k, ""));
+    actions.append(b);
+  }
+  body.append(actions);
+
+  const note = document.createElement("input");
+  note.className = "sim-note";
+  note.type = "text";
+  note.maxLength = 300;
+  note.placeholder = "Post an update to the reporter, e.g. Crew dispatched, ETA 20 min";
+  const post = document.createElement("button");
+  post.className = "sim-post";
+  post.textContent = "Post update";
+  post.addEventListener("click", () => {
+    if (!note.value.trim()) { note.focus(); return; }
+    postDemo(item.public_id, "update", note.value.trim());
+    note.value = "";
+  });
+  body.append(note, post);
+
+  const log = document.createElement("ul");
+  log.className = "sim-log";
+  for (const a of (item.demo_actions || [])) log.append(simRow(a));
+  if ((item.demo_actions || []).length) body.append(log);
+
+  toggle.addEventListener("click", () => {
+    body.hidden = !body.hidden;
+    if (!body.hidden) note.focus();
+  });
+  if ((item.demo_actions || []).length) body.hidden = false;  // show if activity exists
+  wrap.append(body);
+  return wrap;
+}
+
+function simRow(a) {
+  const li = document.createElement("li");
+  const when = document.createElement("span");
+  when.className = "sw";
+  when.textContent = agoText(a.created_at);
+  const k = document.createElement("span");
+  k.className = "sk";
+  k.textContent = SIM_LABELS[a.kind] || a.kind;
+  li.append(when, k);
+  if (a.note) li.append(document.createTextNode(" — " + a.note));
+  const sim = document.createElement("div");
+  sim.className = "sim-simlabel";
+  sim.textContent = "simulated, not a real council action";
+  li.append(sim);
+  return li;
+}
+
+async function postDemo(publicId, kind, note) {
+  try {
+    await postJSON(`/api/demo/items/${encodeURIComponent(publicId)}/action`,
+      { kind, note });
+    selectReportItem(publicId, false);   // refresh detail with the new action
+  } catch (ex) {
+    alert(ex.message);
+  }
+}
+
+/* ==================================================== v3: alerts + sign-up */
+
+function initAlerts() {
+  const btn = $("btn-alerts");
+  if (!btn) return;
+  let token = "";
+  try { token = localStorage.getItem("kitea-alert-token") || ""; } catch {}
+  if (token) { btn.setAttribute("aria-pressed", "true"); btn.textContent = "🔔 Alerts on"; }
+  btn.addEventListener("click", async () => {
+    if (btn.getAttribute("aria-pressed") === "true") return;
+    try {
+      if ("Notification" in window && Notification.permission === "default") {
+        await Notification.requestPermission();
+      }
+    } catch {}
+    token = "s-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    try { localStorage.setItem("kitea-alert-token", token); } catch {}
+    try {
+      await postJSON("/api/alerts/subscribe", { token });
+      btn.setAttribute("aria-pressed", "true");
+      btn.textContent = "🔔 Alerts on";
+    } catch (ex) { alert(ex.message); }
+  });
+}
+
+const ALERT_SEV = { extreme: "", severe: "sev-severe", moderate: "sev-moderate" };
+
+function showAlert(a) {
+  const bar = $("alert-banner");
+  bar.className = "alert-banner " + (ALERT_SEV[a.severity] || "");
+  bar.replaceChildren();
+  const body = document.createElement("div");
+  body.className = "ab-body";
+  const label = { extreme: "EMERGENCY", severe: "WARNING", moderate: "ADVISORY" }[a.severity] || "ALERT";
+  const b = document.createElement("b");
+  b.textContent = `🚨 ${label}: ${a.title} — `;
+  body.append(b, document.createTextNode(a.body || ""));
+  const close = document.createElement("button");
+  close.className = "ab-close";
+  close.textContent = "Dismiss";
+  close.addEventListener("click", () => bar.classList.add("hidden"));
+  bar.append(body, close);
+  bar.classList.remove("hidden");
+  // browser notification for opted-in residents
+  let subscribed = false;
+  try { subscribed = !!localStorage.getItem("kitea-alert-token"); } catch {}
+  if (subscribed && "Notification" in window && Notification.permission === "granted") {
+    try { new Notification(`${label}: ${a.title}`, { body: a.body || "" }); } catch {}
+  }
+}
+
+/* ================================================= v3: first-visit tour */
+
+const TOUR_STEPS = [
+  { sel: null, title: "<b>Welcome to Kitea</b> — Wellington's two-way channel with the council. A 20-second tour of what it does." },
+  { sel: "#lenses", title: "Switch what the map shows: <b>everything</b>, only council-<b>official</b> information, what the <b>community</b> is reporting, or just <b>yours</b>." },
+  { sel: "#chipsbar", title: "Filter by type — flooding, roads, power, rivers, quakes, help. It works across community reports and live agency feeds alike." },
+  { sel: "#btn-report-fab", title: "<b>Report something</b> in under a minute: drop a pin, describe it, done. You get a code to track it live." },
+  { sel: "#btn-help-fab", title: "Need a hand? <b>Ask for help</b> — and on any report, neighbours can offer help back." },
+  { sel: "#btn-alerts", title: "<b>Get alerts</b> to be notified when the council broadcasts an emergency warning. That's the tour — kia ora!" },
+];
+
+function maybeStartTour() {
+  if (trackRef) return;
+  try { if (localStorage.getItem("kitea-tour-done")) return; } catch { return; }
+  if (!$("tour")) return;
+  runTour(0);
+}
+
+function endTour() {
+  try { localStorage.setItem("kitea-tour-done", "1"); } catch {}
+  $("tour").classList.add("hidden");
+}
+
+function runTour(i) {
+  const tour = $("tour");
+  const step = TOUR_STEPS[i];
+  if (!step) return endTour();
+  tour.classList.remove("hidden");
+  $("tour-body").innerHTML = "";
+  $("tour-body").append(htmlToNodes(step.title));
+  $("tour-count").textContent = `${i + 1} / ${TOUR_STEPS.length}`;
+  $("tour-next").textContent = i === TOUR_STEPS.length - 1 ? "Done" : "Next";
+  const spot = $("tour-spot"), pop = $("tour-pop");
+  const target = step.sel && document.querySelector(step.sel);
+  if (target) {
+    const r = target.getBoundingClientRect();
+    const pad = 6;
+    spot.style.display = "block";
+    spot.style.left = (r.left - pad) + "px";
+    spot.style.top = (r.top - pad) + "px";
+    spot.style.width = (r.width + pad * 2) + "px";
+    spot.style.height = (r.height + pad * 2) + "px";
+    let top = r.bottom + 12;
+    if (top + 180 > innerHeight) top = Math.max(12, r.top - 190);
+    pop.style.top = top + "px";
+    pop.style.left = Math.min(Math.max(12, r.left), innerWidth - 340) + "px";
+  } else {
+    spot.style.display = "none";
+    pop.style.top = "50%"; pop.style.left = "50%";
+    pop.style.transform = "translate(-50%,-50%)";
+  }
+  if (target) pop.style.transform = "";
+  $("tour-next").onclick = () => runTour(i + 1);
+  $("tour-skip").onclick = endTour;
+}
+
+// tiny, safe HTML->nodes for the tour's <b> tags only (no user input here)
+function htmlToNodes(html) {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = html.replace(/<(?!\/?b>)/g, "&lt;");  // allow only <b>/</b>
+  return tpl.content;
 }

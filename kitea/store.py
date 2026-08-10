@@ -118,8 +118,22 @@ def init(db_path: str | Path) -> None:
                 revoked_at TEXT,
                 revoked_by TEXT
             );
+            CREATE TABLE IF NOT EXISTS demo_actions (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_public_id TEXT NOT NULL,
+                kind           TEXT NOT NULL,
+                note           TEXT NOT NULL DEFAULT '',
+                created_at     TEXT NOT NULL,
+                expires_at     TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_demo_item ON demo_actions(item_public_id, id);
             """
         )
+        cc = {r["name"] for r in db.execute("PRAGMA table_info(comms)")}
+        if "alert" not in cc:
+            db.execute("ALTER TABLE comms ADD COLUMN alert INTEGER NOT NULL DEFAULT 0")
+        if "severity" not in cc:
+            db.execute("ALTER TABLE comms ADD COLUMN severity TEXT")
         # v1 -> v2 migration for databases created before public_id/verified.
         cols = {r["name"] for r in db.execute("PRAGMA table_info(reports)")}
         if "public_id" not in cols:
@@ -350,6 +364,7 @@ def get_public_item(public_id: str) -> dict | None:
             return None
         item = _row_to_report(row, private=False)
         item["offer_count"] = offer_count(public_id)
+        item["demo_actions"] = demo_actions_for(public_id)
         item["timeline"] = [
             {"status": r["status"], "created_at": r["created_at"]}
             for r in db.execute(
@@ -406,7 +421,8 @@ _BODY_MAX = 2000
 def create_comms(*, title: str, body: str, comms_type: str = "other",
                  lat: float | None = None, lng: float | None = None,
                  place_name: str | None = None, expires_at: str | None = None,
-                 author: str = "council") -> dict:
+                 author: str = "council", alert: bool = False,
+                 severity: str | None = None) -> dict:
     title = (title or "").strip()
     body = (body or "").strip()
     if not 3 <= len(title) <= _TITLE_MAX:
@@ -434,10 +450,10 @@ def create_comms(*, title: str, body: str, comms_type: str = "other",
             raise RuntimeError("could not allocate a comms id")
         db.execute(
             "INSERT INTO comms (public_id, created_at, title, body, comms_type,"
-            " lat, lng, place_name, expires_at, author)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            " lat, lng, place_name, expires_at, author, alert, severity)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (pid, now, title, body, comms_type, lat, lng, place_name,
-             expires_at, author),
+             expires_at, author, int(alert), severity),
         )
     created = get_comms(pid)
     if created is None:  # just inserted; only a torn DB could do this
@@ -752,3 +768,50 @@ def bus_prune(keep_minutes: int = 10) -> None:
               - timedelta(minutes=keep_minutes)).isoformat(timespec="seconds")
     with _write_lock, _conn() as db:
         db.execute("DELETE FROM bus WHERE created_at < ?", (cutoff,))
+
+
+# ---------------------------------------------------------------------------
+# demo staff actions: SANDBOXED and EPHEMERAL. A public visitor can simulate
+# a council officer actioning a community report, but this NEVER touches the
+# report's real status/verified state or the audit trail. Rows auto-expire.
+# ---------------------------------------------------------------------------
+
+DEMO_KINDS = ("acknowledged", "reviewing", "responding", "resolved", "update")
+_DEMO_TTL_MIN = 30
+
+
+def add_demo_action(item_public_id: str, kind: str, note: str = "") -> dict:
+    if kind not in DEMO_KINDS:
+        raise ValueError(f"kind must be one of {DEMO_KINDS}")
+    note = (note or "").strip()[:300]
+    now = datetime.now(timezone.utc)
+    expires = (now + timedelta(minutes=_DEMO_TTL_MIN)).isoformat(timespec="seconds")
+    with _write_lock, _conn() as db:
+        row = db.execute("SELECT 1 FROM reports WHERE public_id=?",
+                         (item_public_id,)).fetchone()
+        if row is None:
+            raise KeyError(item_public_id)
+        cur = db.execute(
+            "INSERT INTO demo_actions (item_public_id, kind, note, created_at, expires_at)"
+            " VALUES (?,?,?,?,?)",
+            (item_public_id, kind, note, now.isoformat(timespec="seconds"), expires))
+    return {"id": cur.lastrowid, "item_public_id": item_public_id, "kind": kind,
+            "note": note, "created_at": now.isoformat(timespec="seconds"),
+            "expires_at": expires, "simulated": True}
+
+
+def demo_actions_for(item_public_id: str) -> list[dict]:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT kind, note, created_at FROM demo_actions"
+            " WHERE item_public_id=? AND expires_at > ? ORDER BY id",
+            (item_public_id, now)).fetchall()
+    return [dict(r, simulated=True) for r in rows]
+
+
+def prune_demo_actions() -> int:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with _write_lock, _conn() as db:
+        cur = db.execute("DELETE FROM demo_actions WHERE expires_at <= ?", (now,))
+    return cur.rowcount
