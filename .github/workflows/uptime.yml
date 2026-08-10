@@ -9,6 +9,9 @@ on:
     - cron: "*/30 * * * *"
   workflow_dispatch:
 
+permissions:
+  issues: write
+
 jobs:
   probe:
     runs-on: ubuntu-latest
@@ -19,3 +22,12 @@ jobs:
           out=$(curl -fsS -m 20 https://kitea.bitn.co.nz/api/health)
           echo "$out"
           echo "$out" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['ok'] is True, d"
+
+      - name: Raise an alert issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "Uptime probe failed: kitea.bitn.co.nz $(date -u +%FT%TZ)" \
+            --body "The scheduled health probe failed. Runbook: docs/RUNBOOK.md (incidents section). Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" || true

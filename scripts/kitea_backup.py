@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
-import sys
 import tarfile
 import tempfile
 import time
@@ -60,7 +59,7 @@ def verify(archive: Path) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         with tarfile.open(archive, "r:gz") as tar:
             try:
-                tar.extractall(tmp, filter="data")
+                tar.extractall(tmp, filter="data")  # nosec B202 - "data" filter rejects unsafe members
             except TypeError:
                 # Python < 3.11.4 has no filter=; validate members manually
                 for m in tar.getmembers():
@@ -69,7 +68,7 @@ def verify(archive: Path) -> dict:
                             not name.startswith(("kitea.db", "uploads")):
                         raise SystemExit(
                             f"unexpected archive member: {m.name}") from None
-                tar.extractall(tmp)  # noqa: S202 (members validated above)
+                tar.extractall(tmp)  # noqa: S202 # nosec B202 - members validated above
         db = sqlite3.connect(Path(tmp) / "kitea.db")
         integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
         reports = db.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
@@ -108,4 +107,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

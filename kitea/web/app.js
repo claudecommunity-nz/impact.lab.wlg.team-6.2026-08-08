@@ -1014,6 +1014,8 @@ async function onSubmit(e) {
       contact: $("contact").value.trim() || null,
     };
     if (drawerLatLng) { body.lat = drawerLatLng.lat; body.lng = drawerLatLng.lng; }
+    const hp = $("hp-website");
+    if (hp && hp.value) body.website = hp.value;
     if (photoB64) body.photo_b64 = photoB64;
     const report = await postJSON("/api/reports", body);
     rememberRef(report);

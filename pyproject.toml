@@ -22,3 +22,16 @@ omit = ["kitea/__main__.py"]
 # The feeds builders talk to live agency APIs and are exercised against
 # production, not in unit tests; pure helpers and the cache ARE tested.
 exclude_lines = ["pragma: no cover", "if __name__"]
+
+[tool.mypy]
+files = ["kitea", "scripts/kitea_backup.py"]
+ignore_missing_imports = true
+follow_imports = "silent"
+
+[[tool.mypy.overrides]]
+module = ["wcc_gis", "enrichment.*"]
+ignore_errors = true
+
+[tool.bandit]
+targets = ["kitea", "scripts"]
+exclude_dirs = ["tests"]

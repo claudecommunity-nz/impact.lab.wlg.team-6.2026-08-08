@@ -30,7 +30,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosec B405 - all parses go through _safe_xml, which refuses DTDs
 from datetime import datetime, timezone
 
 import wcc_gis
@@ -112,15 +112,26 @@ def _cached(feed_id: str, ttl: int, build) -> dict:
                     "fetched_at": _now_iso(), "from_cache": False}
 
 
-def _get_json(url: str) -> dict | list:
-    req = urllib.request.Request(url, headers={"User-Agent": _UA})
-    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-        return json.load(resp)
+def _check_scheme(url: str) -> str:
+    # CAP item links arrive from a feed; never follow file:/ or exotic
+    # schemes even if the upstream is compromised.
+    if not url.startswith(("https://", "http://")):
+        raise ValueError(f"refusing non-http(s) url: {url[:60]}")
+    return url
+
+
+def _get_json(url: str) -> dict:
+    req = urllib.request.Request(_check_scheme(url), headers={"User-Agent": _UA})
+    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:  # nosec B310 - scheme checked above
+        data = json.load(resp)
+    if not isinstance(data, dict):
+        raise ValueError(f"expected a JSON object from {url[:60]}")
+    return data
 
 
 def _get_text(url: str) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": _UA})
-    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+    req = urllib.request.Request(_check_scheme(url), headers={"User-Agent": _UA})
+    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:  # nosec B310 - scheme checked above
         return resp.read().decode("utf-8", "replace")
 
 
@@ -357,7 +368,7 @@ def _safe_xml(text: str) -> ET.Element:
     lowered = text[:4096].lower()
     if "<!doctype" in lowered or "<!entity" in lowered:
         raise ValueError("feed contained a DTD; refusing to parse")
-    return ET.fromstring(text)
+    return ET.fromstring(text)  # nosec B314 - DTD refused above; ElementTree does not resolve external entities
 
 
 def _cap_polygon_geojson(polygon_text: str) -> list | None:
@@ -390,13 +401,17 @@ def weather() -> dict:
             national += 1
             title = (it.findtext("title") or "").strip()
             link = (it.findtext("link") or "").strip()
-            item = {"title": title, "link": link,
+            item: dict[str, object] = {"title": title, "link": link,
                     "published": (it.findtext("pubDate") or "").strip()}
             # Region and geometry live in the per-alert CAP XML, not the
             # RSS item (verified live: RSS titles carry no placenames).
             try:
                 info = _safe_xml(_get_text(link)).find("cap:info", _CAP_NS)
+                if info is None:
+                    raise ValueError("CAP alert has no info block")
                 area = info.find("cap:area", _CAP_NS)
+                if area is None:
+                    raise ValueError("CAP alert has no area block")
                 area_desc = area.findtext("cap:areaDesc", "", _CAP_NS)
                 rings = _cap_polygon_geojson(
                     area.findtext("cap:polygon", "", _CAP_NS))

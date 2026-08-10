@@ -64,6 +64,7 @@ _LOOKUP_MISS_LIMIT = 30              # failed ref lookups per IP per hour
 OPS_KEY = os.environ.get("KITEA_OPS_KEY") or secrets.token_urlsafe(9)
 
 _STARTED = time.monotonic()
+_REQUESTS = [0]  # served requests, this process
 
 _submits: dict[str, deque] = defaultdict(deque)
 _submits_lock = threading.Lock()
@@ -223,6 +224,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _common_headers(self, ctype: str, length: int | None) -> None:
+        _REQUESTS[0] += 1
         self.send_header("Content-Type", ctype)
         if length is not None:
             self.send_header("Content-Length", str(length))
@@ -288,6 +290,21 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/uploads/"):
                 return self._send_static(UPLOAD_DIR, path[len("/uploads/"):])
 
+            if path == "/api/metrics":
+                if self._require(query, "duty", "comms") is None:
+                    return
+                with HUB._lock:
+                    sse = len(HUB._subs)
+                cache_ages = {fid: round(time.monotonic() - exp)
+                              for fid, exp in feeds._cache_expiry.items()}
+                return self._send_json({
+                    "uptime_s": round(time.monotonic() - _STARTED),
+                    "requests_total": _REQUESTS[0],
+                    "sse_clients": sse,
+                    "reports": store.stats(),
+                    "feed_cache_expiry_offsets_s": cache_ages,
+                    "mode": store.get_mode(),
+                })
             if path == "/api/health":
                 try:
                     total = store.stats()["total"]
@@ -346,7 +363,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/hazard":
                 return self._hazard(query)
             if path == "/api/stream":
-                ref = (query.get("ref") or [None])[0]
+                ref = (query.get("ref") or [""])[0] or None
                 return self._stream(ref=ref, ops=False)
 
             if path == "/api/ops/me":
@@ -509,6 +526,9 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def _create_report(self, body: dict) -> None:
+        if body.get("website"):
+            # honeypot field: invisible to humans, irresistible to form bots
+            return self._error(400, "rejected")
         if self._rate_limited():
             return self._error(429, "too many reports from this connection; "
                                     "please wait before submitting more")
@@ -618,6 +638,8 @@ class Handler(BaseHTTPRequestHandler):
                 if r.get("group") == me["group"] and r["photo"]]
 
     def _create_offer(self, public_id: str, body: dict) -> None:
+        if body.get("website"):
+            return self._error(400, "rejected")
         if self._rate_limited("offers"):
             return self._error(429, "too many submissions from this "
                                     "connection; please wait")
@@ -633,6 +655,8 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, TypeError) as exc:
             return self._error(400, str(exc))
         rep = store.get_public_item(public_id)
+        if rep is None:  # item existed moments ago; only a torn DB could do this
+            return self._error(500, "internal error: item vanished")
         HUB.publish("offer", offer, ops_only=True)
         # the reporter learns a neighbour has offered; the public only sees
         # the count move
@@ -787,12 +811,42 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def run(host: str = "127.0.0.1", port: int = 8146) -> None:
+def _retention_loop() -> None:
+    """Enforce the privacy review's retention schedule (IPP9), daily."""
+    while True:
+        try:
+            removed = store.apply_retention(uploads_dir=UPLOAD_DIR)
+            if any(removed.values()):
+                print(f"retention: {removed}")
+        except Exception as exc:
+            print(f"retention run failed: {exc!r}")
+        time.sleep(24 * 3600)
+
+
+class _ReusePortServer(ThreadingHTTPServer):
+    """SO_REUSEPORT lets N worker processes share one port: the kernel
+    load-balances connections. This is the documented scaling path past
+    the single interpreter's GIL, measured by the load smoke's stress
+    tier."""
+
+    def server_bind(self):
+        import socket
+        if hasattr(socket, "SO_REUSEPORT"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        super().server_bind()
+
+
+def run(host: str = "127.0.0.1", port: int = 8146, workers: int = 1) -> None:
     store.init(DATA_DIR / "kitea.db")
-    server = ThreadingHTTPServer((host, port), Handler)
+    if workers > 1 and hasattr(os, "fork"):
+        for _ in range(workers - 1):
+            if os.fork() == 0:
+                break  # child continues below as one worker
+    server = _ReusePortServer((host, port), Handler)
     server.daemon_threads = True
+    threading.Thread(target=_retention_loop, daemon=True).start()
     if not os.environ.get("KITEA_OPS_KEY"):
         print(f"KITEA_OPS_KEY not set; generated ops key for this run: {OPS_KEY}")
     print(f"Kitea {__version__} — residents: http://{host}:{port}/   "
-          f"ops: http://{host}:{port}/ops")
+          f"ops: http://{host}:{port}/ops   (pid {os.getpid()})")
     server.serve_forever()

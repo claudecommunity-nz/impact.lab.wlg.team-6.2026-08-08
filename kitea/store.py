@@ -18,7 +18,7 @@ import json
 import secrets
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # No lookalike characters (0/O, 1/I/L) — codes get read over the phone
@@ -225,7 +225,10 @@ def create_report(
             " VALUES (?, 'received', 'Your report has reached the council.', 'system', ?)",
             (ref, now),
         )
-    return get_report(ref, private=True)
+    created = get_report(ref, private=True)
+    if created is None:  # just inserted; only a torn DB could do this
+        raise RuntimeError("row vanished after insert")
+    return created
 
 
 def add_status(ref: str, status: str, note: str = "", actor: str = "ops") -> dict:
@@ -421,7 +424,10 @@ def create_comms(*, title: str, body: str, comms_type: str = "other",
             (pid, now, title, body, comms_type, lat, lng, place_name,
              expires_at, author),
         )
-    return get_comms(pid)
+    created = get_comms(pid)
+    if created is None:  # just inserted; only a torn DB could do this
+        raise RuntimeError("row vanished after insert")
+    return created
 
 
 def get_comms(public_id: str) -> dict | None:
@@ -456,7 +462,10 @@ def withdraw_comms(public_id: str, actor: str) -> dict:
         if row["withdrawn_at"] is None:
             db.execute("UPDATE comms SET withdrawn_at=?, withdrawn_by=?"
                        " WHERE public_id=?", (now, actor, public_id))
-    return get_comms(public_id)
+    post = get_comms(public_id)
+    if post is None:  # existence checked in this transaction
+        raise RuntimeError("row vanished after update")
+    return post
 
 
 # ---------------------------------------------------------------------------
@@ -627,3 +636,46 @@ def set_mode(mode: str, actor: str) -> str:
                    " updated_at=excluded.updated_at, updated_by=excluded.updated_by",
                    (mode, _now(), actor))
     return mode
+
+
+# ---------------------------------------------------------------------------
+# retention: the privacy review's schedule, enforced (IPP9)
+# ---------------------------------------------------------------------------
+
+
+def apply_retention(*, contact_days: int = 90, photo_days: int = 365,
+                    uploads_dir: Path | None = None) -> dict:
+    """Purge what the privacy review says must not live forever: contact
+    details 90 days after a report resolves (offers age from creation),
+    photos after 12 months. Anonymised report rows stay for planning.
+    Returns counts so the run is observable.
+    """
+    now = datetime.now(timezone.utc)
+    contact_cutoff = (now - timedelta(days=contact_days)).isoformat(timespec="seconds")
+    photo_cutoff = (now - timedelta(days=photo_days)).isoformat(timespec="seconds")
+    removed = {"contacts": 0, "offer_contacts": 0, "photos": 0}
+    with _write_lock, _conn() as db:
+        cur = db.execute(
+            "UPDATE reports SET contact=NULL WHERE contact IS NOT NULL AND ref IN ("
+            " SELECT ref FROM status_events WHERE status='resolved'"
+            " GROUP BY ref HAVING MAX(created_at) < ?)",
+            (contact_cutoff,))
+        removed["contacts"] = cur.rowcount
+        cur = db.execute(
+            "UPDATE offers SET contact=NULL"
+            " WHERE contact IS NOT NULL AND created_at < ?",
+            (contact_cutoff,))
+        removed["offer_contacts"] = cur.rowcount
+        rows = db.execute(
+            "SELECT ref, photo FROM reports"
+            " WHERE photo IS NOT NULL AND created_at < ?",
+            (photo_cutoff,)).fetchall()
+        for r in rows:
+            if uploads_dir is not None:
+                try:
+                    (Path(uploads_dir) / r["photo"]).unlink(missing_ok=True)
+                except OSError:
+                    pass  # file already gone; still clear the reference
+            db.execute("UPDATE reports SET photo=NULL WHERE ref=?", (r["ref"],))
+            removed["photos"] += 1
+    return removed

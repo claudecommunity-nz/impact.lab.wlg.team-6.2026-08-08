@@ -18,10 +18,16 @@ jobs:
           python-version: "3.12"
 
       - name: Install CI tooling (runtime has zero dependencies)
-        run: pip install ruff coverage
+        run: pip install ruff coverage bandit mypy
 
       - name: Lint (ruff)
         run: ruff check .
+
+      - name: Types (mypy)
+        run: mypy
+
+      - name: SAST (bandit)
+        run: bandit -q -r kitea/ scripts/kitea_backup.py
 
       - name: Tests with coverage
         run: |
@@ -44,3 +50,6 @@ jobs:
 
       - name: Load smoke (300 req, 20 concurrent, p95 budget)
         run: python3 scripts/load_smoke.py
+
+      - name: Stress smoke (1000 req, 100 concurrent, 2 workers)
+        run: python3 scripts/load_smoke.py --stress

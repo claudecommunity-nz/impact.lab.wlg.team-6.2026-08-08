@@ -40,12 +40,21 @@ PORT = 8199
 
 
 def main() -> int:
+    # --stress: 1000 requests at 100-concurrent against 2 workers
+    # (SO_REUSEPORT), the measured scaling step past one interpreter.
+    stress = "--stress" in sys.argv
+    global TOTAL, CONCURRENCY, P95_BUDGET_MS, MIN_THROUGHPUT_RPS
+    workers = "1"
+    if stress:
+        TOTAL, CONCURRENCY = 1000, 100
+        P95_BUDGET_MS, MIN_THROUGHPUT_RPS = 2000, 100
+        workers = "2"
     env = dict(os.environ,
                KITEA_OPS_KEY="load-smoke-key",
                KITEA_RATE_LIMIT="10000",
                KITEA_DATA_DIR=tempfile.mkdtemp(prefix="kitea-load-"))
     proc = subprocess.Popen(
-        [sys.executable, "-m", "kitea", "--port", str(PORT)],
+        [sys.executable, "-m", "kitea", "--port", str(PORT), "--workers", workers],
         cwd=REPO, env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     base = f"http://127.0.0.1:{PORT}"
